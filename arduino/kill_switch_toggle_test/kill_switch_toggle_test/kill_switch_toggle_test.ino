@@ -2,7 +2,8 @@
 #include <Motoron.h>
 
 // Initialize with address 16
-MotoronI2C mc(16);  
+MotoronI2C mc(16);
+
 
 // --- MOTOR CONFIGURATION ---
 const int LEFT_MOTOR_CHANNEL = 1;
@@ -12,25 +13,29 @@ const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
 // ---------------------------
 
+
 // --- ENCODER CONFIGURATION ---
-const int leftEncoderPinA = D4;  
-const int leftEncoderPinB = D5;  
+const int leftEncoderPinA = D2;
+const int leftEncoderPinB = D3;
 
-const int rightEncoderPinA = D2;  
-const int rightEncoderPinB = D3;  
+const int rightEncoderPinA = D4;
+const int rightEncoderPinB = D5;
 
-volatile long leftEncoderPos = 0;  
-volatile long rightEncoderPos = 0;  
+volatile long leftEncoderPos = 0;
+volatile long rightEncoderPos = 0;
 // -----------------------------
 
+
 // --- BUTTON AND LED ---
-const int buttonPin = D6;
-const int redLedPin = D7;
+const int buttonPin = D8;
+const int redLedPin = D9;
 // ----------------------
+
 
 // Full speed
 // Your previous working forward movement used -800
 const int FORWARD_SPEED = -800;
+
 
 // --- MODES ---
 int currentMode = 0;
@@ -41,19 +46,25 @@ const int MODE_BACKWARD = 2;
 const int MODE_TURN_LEFT = 3;
 const int MODE_TURN_RIGHT = 4;
 
+
 // --- BUTTON DEBOUNCE ---
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
+
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
+
 
 // --- LED BLINK ---
 unsigned long lastBlinkTime = 0;
 bool ledState = LOW;
+
 const unsigned long blinkInterval = 500;
+
 
 // --- PRINTING ---
 unsigned long lastPrintTime = 0;
+
 
 void setup() {
 
@@ -66,7 +77,7 @@ void setup() {
   mc.reinitialize();
   mc.clearResetFlag();
 
-  mc.setCommandTimeoutMilliseconds(1000);  
+  mc.setCommandTimeoutMilliseconds(1000);
 
   mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 200);
   mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 300);
@@ -80,8 +91,17 @@ void setup() {
   pinMode(rightEncoderPinA, INPUT_PULLUP);
   pinMode(rightEncoderPinB, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(leftEncoderPinA), readLeftEncoder, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(rightEncoderPinA), readRightEncoder, CHANGE);
+  attachInterrupt(
+    digitalPinToInterrupt(leftEncoderPinA),
+    readLeftEncoder,
+    CHANGE
+  );
+
+  attachInterrupt(
+    digitalPinToInterrupt(rightEncoderPinA),
+    readRightEncoder,
+    CHANGE
+  );
 
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(redLedPin, OUTPUT);
@@ -92,6 +112,7 @@ void setup() {
   Serial.println("Press button to cycle modes.");
 }
 
+
 void loop() {
 
   mc.resetCommandTimeout();
@@ -101,6 +122,7 @@ void loop() {
   runCurrentMode();
 
   if (millis() - lastPrintTime >= 500) {
+
     Serial.print("Mode: ");
     printModeName();
 
@@ -108,13 +130,15 @@ void loop() {
     Serial.print(leftEncoderPos);
 
     Serial.print(" | Right Pos: ");
-    Serial.println(rightEncoderPos);
+    Serial.println(-rightEncoderPos);
 
     lastPrintTime = millis();
   }
 }
 
+
 void checkButton() {
+
   bool reading = digitalRead(buttonPin);
 
   if (reading != lastButtonReading) {
@@ -122,11 +146,14 @@ void checkButton() {
   }
 
   if ((millis() - lastDebounceTime) > debounceDelay) {
+
     if (reading != stableButtonState) {
+
       stableButtonState = reading;
 
       // INPUT_PULLUP means pressed = LOW
       if (stableButtonState == LOW) {
+
         currentMode++;
 
         if (currentMode > MODE_TURN_RIGHT) {
@@ -143,24 +170,34 @@ void checkButton() {
   lastButtonReading = reading;
 }
 
+
 void runCurrentMode() {
 
   if (currentMode == MODE_STOP) {
-    stopMotors();
-    blinkStoppedLed();
-  }
+
+  stopMotors();
+
+  // Reset encoder positions
+  leftEncoderPos = 0;
+  rightEncoderPos = 0;
+
+  blinkStoppedLed();
+}
 
   else if (currentMode == MODE_FORWARD) {
+
     digitalWrite(redLedPin, LOW);
     driveMotors(FORWARD_SPEED, FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_BACKWARD) {
+
     digitalWrite(redLedPin, LOW);
     driveMotors(-FORWARD_SPEED, -FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_TURN_LEFT) {
+
     digitalWrite(redLedPin, LOW);
 
     // Left tread backward, right tread forward
@@ -168,6 +205,7 @@ void runCurrentMode() {
   }
 
   else if (currentMode == MODE_TURN_RIGHT) {
+
     digitalWrite(redLedPin, LOW);
 
     // Left tread forward, right tread backward
@@ -175,54 +213,88 @@ void runCurrentMode() {
   }
 }
 
+
 void driveMotors(int leftSpeed, int rightSpeed) {
-  mc.setSpeed(LEFT_MOTOR_CHANNEL, LEFT_DIR * leftSpeed);
-  mc.setSpeed(RIGHT_MOTOR_CHANNEL, RIGHT_DIR * rightSpeed);
+
+  mc.setSpeed(
+    LEFT_MOTOR_CHANNEL,
+    LEFT_DIR * leftSpeed
+  );
+
+  mc.setSpeed(
+    RIGHT_MOTOR_CHANNEL,
+    RIGHT_DIR * rightSpeed
+  );
 }
 
+
 void stopMotors() {
+
   mc.setSpeed(LEFT_MOTOR_CHANNEL, 0);
   mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
 }
 
+
 void blinkStoppedLed() {
+
   if (millis() - lastBlinkTime >= blinkInterval) {
+
     lastBlinkTime = millis();
+
     ledState = !ledState;
+
     digitalWrite(redLedPin, ledState);
   }
 }
 
+
 void printModeName() {
+
   if (currentMode == MODE_STOP) {
     Serial.print("STOP");
   }
+
   else if (currentMode == MODE_FORWARD) {
     Serial.print("FORWARD");
   }
+
   else if (currentMode == MODE_BACKWARD) {
     Serial.print("BACKWARD");
   }
+
   else if (currentMode == MODE_TURN_LEFT) {
     Serial.print("TURN LEFT");
   }
+
   else if (currentMode == MODE_TURN_RIGHT) {
     Serial.print("TURN RIGHT");
   }
 }
 
+
 void readLeftEncoder() {
-  if (digitalRead(leftEncoderPinA) == digitalRead(leftEncoderPinB)) {
-    leftEncoderPos--;  
+
+  if (digitalRead(leftEncoderPinA) ==
+      digitalRead(leftEncoderPinB)) {
+
+    leftEncoderPos--;
+
   } else {
-    leftEncoderPos++;  
+
+    leftEncoderPos++;
   }
 }
 
+
 void readRightEncoder() {
-  if (digitalRead(rightEncoderPinA) == digitalRead(rightEncoderPinB)) {
-    rightEncoderPos--;  
+
+  if (digitalRead(rightEncoderPinA) ==
+      digitalRead(rightEncoderPinB)) {
+
+    rightEncoderPos--;
+
   } else {
-    rightEncoderPos++;  
+
+    rightEncoderPos++;
   }
 }
