@@ -34,7 +34,7 @@ const int redLedPin = D9;
 
 // Full speed
 // Your previous working forward movement used -800
-const int FORWARD_SPEED = -800;
+const int FORWARD_SPEED = -300;
 
 
 // --- MODES ---
