@@ -5,8 +5,8 @@
 // WIFI SETTINGS
 // =========================
 
-const char* ssid = "Xia";
-const char* password = "He600910";
+const char* ssid = " ";
+const char* password = " ";
 
 // =========================
 // UDP
