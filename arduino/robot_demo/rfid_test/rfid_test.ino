@@ -3,7 +3,7 @@
 
 #define RFID_ADDR 0x28
 
-MFRC522_I2C rfid(RFID_ADDR, -1);
+MFRC522_I2C rfid(RFID_ADDR, -1, &Wire1);
 
 bool startupMessagePrinted = false;
 
@@ -18,7 +18,7 @@ void setup() {
 
   delay(1000);   // Give Serial Monitor time to fully open
 
-  Wire.begin();  // GIGA R1 I2C
+  Wire1.begin();  // GIGA R1 I2C
   delay(500);
 
   rfid.PCD_Init();
