@@ -8,9 +8,7 @@ uint16_t sensorValues[SensorCount];
 
 const uint16_t timeout = 2500; // microseconds
 
-
 void readQTR_RC() {
-
   // Step 1: charge all sensor capacitors
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], OUTPUT);
@@ -19,24 +17,20 @@ void readQTR_RC() {
 
   delayMicroseconds(10);
 
-  // Step 2: switch pins to input and time how long they stay HIGH
+  // Step 2: switch pins to input and measure discharge time
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], INPUT);
     sensorValues[i] = timeout;
   }
 
   unsigned long startTime = micros();
-
   bool allDone = false;
 
   while (!allDone && (micros() - startTime < timeout)) {
-
     allDone = true;
 
     for (uint8_t i = 0; i < SensorCount; i++) {
-
       if (sensorValues[i] == timeout) {
-
         if (digitalRead(sensorPins[i]) == LOW) {
           sensorValues[i] = micros() - startTime;
         } else {
@@ -47,9 +41,7 @@ void readQTR_RC() {
   }
 }
 
-
 void setup() {
-
   Serial.begin(115200);
 
   while (!Serial) {
@@ -59,20 +51,25 @@ void setup() {
   delay(1000);
 
   Serial.println("QTR-HD-09RC manual RC reading test");
-  Serial.println("S1\tS2\tS3\tS4\tS5\tS6\tS7\tS8\tS9");
+  Serial.println("Higher value = darker / weaker reflection");
+  Serial.println("Lower value  = lighter / stronger reflection");
+  Serial.println();
 }
 
-
 void loop() {
-
   readQTR_RC();
 
   for (uint8_t i = 0; i < SensorCount; i++) {
+    Serial.print("S");
+    Serial.print(i + 1);
+    Serial.print(": ");
     Serial.print(sensorValues[i]);
-    Serial.print('\t');
+
+    if (i < SensorCount - 1) {
+      Serial.print(" | ");
+    }
   }
 
   Serial.println();
-
   delay(300);
 }
