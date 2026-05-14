@@ -33,10 +33,10 @@ const int FORWARD_FASTEST = -800;
 // =====================
 // ENCODER BASED U-TURN
 // =====================
-const int UTURN_SPEED = -500;
-const int UTURN_SLOW_SPEED = -220;
+const int UTURN_SPEED = -400;
+const int UTURN_SLOW_SPEED = -300;
 
-const long UTURN_180_COUNTS = 1200*4.5;
+const long UTURN_180_COUNTS = 1200 * 4.6;
 const long UTURN_SLOWDOWN_COUNTS = 250;
 
 bool uTurnStarted = false;
@@ -45,11 +45,11 @@ bool uTurnFinished = false;
 // =====================
 // 90 DEGREE TURN TEST
 // =====================
-const int TURN90_SPEED = -500;
-const int TURN90_SLOW_SPEED = -180;
+const int TURN90_SPEED = -350;
+const int TURN90_SLOW_SPEED = -350;
 
-const long LEFT_90_COUNTS = 600;
-const long RIGHT_90_COUNTS = 600;
+const long LEFT_90_COUNTS = 2500;
+const long RIGHT_90_COUNTS = 2500;
 
 const long TURN90_SLOWDOWN_COUNTS = 250;
 
@@ -72,10 +72,13 @@ volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
 
 // =====================
-// BUTTON AND LED
+// BUTTON AND RGB LED
 // =====================
 const int buttonPin = D8;
-const int redLedPin = D9;
+
+// Common cathode RGB LED
+const int r_led = D52;
+const int g_led = D50;
 
 // =====================
 // TEST NUMBER
@@ -114,7 +117,7 @@ unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
 
 // =====================
-// LED BLINK
+// RGB LED BLINK
 // =====================
 unsigned long lastBlinkTime = 0;
 bool ledState = LOW;
@@ -212,7 +215,9 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(rightEncoderPinA), readRightEncoder, CHANGE);
 
   pinMode(buttonPin, INPUT_PULLUP);
-  pinMode(redLedPin, OUTPUT);
+
+  pinMode(r_led, OUTPUT);
+  pinMode(g_led, OUTPUT);
 
   rfid.PCD_Init();
   delay(300);
@@ -225,7 +230,7 @@ void setup() {
   delay(500);
 
   stopMotors();
-  digitalWrite(redLedPin, LOW);
+  rgbOff();
 }
 
 // =====================
@@ -295,7 +300,7 @@ void checkSerial() {
       resetButtonDebounce();
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       Serial.println();
       Serial.println("Kill switch test started");
@@ -311,7 +316,7 @@ void checkSerial() {
       currentSpeedMode = SPEED_STOP;
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       rfidMessagePrinted = false;
       tofMessagePrinted = false;
@@ -343,7 +348,7 @@ void checkSerial() {
       currentSpeedMode = SPEED_STOP;
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       rfidMessagePrinted = false;
       tofMessagePrinted = false;
@@ -381,7 +386,7 @@ void checkSerial() {
       currentSpeedMode = SPEED_STOP;
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       rfidMessagePrinted = false;
       tofMessagePrinted = false;
@@ -425,7 +430,7 @@ void checkSerial() {
       resetButtonDebounce();
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       Serial.println();
       Serial.println("Forward speed test started");
@@ -454,7 +459,7 @@ void checkSerial() {
       activeTurn90Direction = 0;
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       Serial.println();
       Serial.println("Encoder U-turn test started");
@@ -487,7 +492,7 @@ void checkSerial() {
       resetButtonDebounce();
 
       stopMotors();
-      digitalWrite(redLedPin, LOW);
+      rgbOff();
 
       Serial.println();
       Serial.println("90 degree turn test started");
@@ -570,33 +575,33 @@ void runCurrentMode() {
 
     resetEncoders();
 
-    blinkStoppedLed();
+    blinkRedRGB();
   }
 
   else if (currentMode == MODE_FORWARD) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_SPEED, FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_BACKWARD) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(-FORWARD_SPEED, -FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_TURN_LEFT) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(-FORWARD_SPEED, FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_TURN_RIGHT) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_SPEED, -FORWARD_SPEED);
   }
@@ -668,33 +673,33 @@ void runCurrentSpeedMode() {
 
     resetEncoders();
 
-    blinkStoppedLed();
+    blinkRedRGB();
   }
 
   else if (currentSpeedMode == SPEED_SLOW) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_SLOW, FORWARD_SLOW);
   }
 
   else if (currentSpeedMode == SPEED_MEDIUM) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_MEDIUM, FORWARD_MEDIUM);
   }
 
   else if (currentSpeedMode == SPEED_FAST) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_FAST, FORWARD_FAST);
   }
 
   else if (currentSpeedMode == SPEED_FASTEST) {
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     driveMotors(FORWARD_FASTEST, FORWARD_FASTEST);
   }
@@ -736,7 +741,7 @@ void runUTurnTest() {
 
     uTurnStarted = true;
 
-    digitalWrite(redLedPin, LOW);
+    rgbOff();
 
     Serial.println("Encoder U-turn moving...");
   }
@@ -786,7 +791,7 @@ void runUTurnTest() {
 
   if (uTurnFinished) {
     stopMotors();
-    blinkStoppedLed();
+    blinkRedRGB();
   }
 }
 
@@ -801,7 +806,7 @@ void runTurn90ToggleTest() {
 
   if (!turn90InProgress) {
     stopMotors();
-    blinkStoppedLed();
+    blinkRedRGB();
   }
 
   if (turn90InProgress) {
@@ -957,7 +962,25 @@ void stopMotors() {
   mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
 }
 
-void blinkStoppedLed() {
+// =====================
+// RGB LED FUNCTIONS
+// =====================
+void rgbOff() {
+  digitalWrite(r_led, LOW);
+  digitalWrite(g_led, LOW);
+}
+
+void setRed() {
+  digitalWrite(r_led, HIGH);
+  digitalWrite(g_led, LOW);
+}
+
+void setGreen() {
+  digitalWrite(r_led, LOW);
+  digitalWrite(g_led, HIGH);
+}
+
+void blinkRedRGB() {
 
   if (millis() - lastBlinkTime >= blinkInterval) {
 
@@ -965,7 +988,11 @@ void blinkStoppedLed() {
 
     ledState = !ledState;
 
-    digitalWrite(redLedPin, ledState);
+    if (ledState) {
+      setRed();
+    } else {
+      rgbOff();
+    }
   }
 }
 

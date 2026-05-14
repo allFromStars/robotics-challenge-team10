@@ -1,7 +1,7 @@
-int r_led = 3;    
-int g_led = 4;     
+int r_led = 52;    
+int g_led = 50;     
 
-int switchPin = 2;  // Microswitch NO connected here 
+int switchPin = 8;  // Microswitch NO connected here 
 
 void setup() { 
 
