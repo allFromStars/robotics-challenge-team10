@@ -2,20 +2,14 @@
 #include <Motoron.h>
 #include <MFRC522_I2C.h>
 
-// =====================
-// MOTORON
-// =====================
 MotoronI2C mc(16);
 
-// =====================
+
 // RFID
-// =====================
 #define RFID_ADDR 0x28
 MFRC522_I2C rfid(RFID_ADDR, -1, &Wire1);
 
-// =====================
 // MOTORS
-// =====================
 const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
 
@@ -30,9 +24,7 @@ const int FORWARD_MEDIUM = -300;
 const int FORWARD_FAST = -500;
 const int FORWARD_FASTEST = -800;
 
-// =====================
 // ENCODER BASED U-TURN
-// =====================
 const int UTURN_SPEED = -400;
 const int UTURN_SLOW_SPEED = -300;
 
@@ -42,9 +34,7 @@ const long UTURN_SLOWDOWN_COUNTS = 250;
 bool uTurnStarted = false;
 bool uTurnFinished = false;
 
-// =====================
 // 90 DEGREE TURN TEST
-// =====================
 const int TURN90_SPEED = -350;
 const int TURN90_SLOW_SPEED = -350;
 
@@ -59,9 +49,8 @@ bool turn90InProgress = false;
 int activeTurn90Direction = 0;
 int nextTurn90Direction = -1;
 
-// =====================
+
 // ENCODERS
-// =====================
 const int leftEncoderPinA = D2;
 const int leftEncoderPinB = D3;
 
@@ -71,23 +60,17 @@ const int rightEncoderPinB = D5;
 volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
 
-// =====================
 // BUTTON AND RGB LED
-// =====================
 const int buttonPin = D8;
 
 // Common cathode RGB LED
 const int r_led = D52;
 const int g_led = D50;
 
-// =====================
 // TEST NUMBER
-// =====================
 int currentTest = 0;
 
-// =====================
 // MOTOR MODES FOR TEST 1
-// =====================
 int currentMode = 0;
 
 const int MODE_STOP = 0;
@@ -96,9 +79,7 @@ const int MODE_BACKWARD = 2;
 const int MODE_TURN_LEFT = 3;
 const int MODE_TURN_RIGHT = 4;
 
-// =====================
 // SPEED MODES FOR TEST 5
-// =====================
 int currentSpeedMode = 0;
 
 const int SPEED_STOP = 0;
@@ -107,34 +88,24 @@ const int SPEED_MEDIUM = 2;
 const int SPEED_FAST = 3;
 const int SPEED_FASTEST = 4;
 
-// =====================
-// BUTTON DEBOUNCE
-// =====================
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
 
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
 
-// =====================
-// RGB LED BLINK
-// =====================
+// RGB LED BLINk
 unsigned long lastBlinkTime = 0;
 bool ledState = LOW;
 const unsigned long blinkInterval = 500;
 
-// =====================
-// PRINTING
-// =====================
 unsigned long lastPrintTime = 0;
 
 bool rfidMessagePrinted = false;
 bool tofMessagePrinted = false;
 bool irMessagePrinted = false;
 
-// =====================
 // DISTANCE SENSORS
-// =====================
 const unsigned long SENSOR_BAUD = 921600;
 
 uint8_t frame1[16];
