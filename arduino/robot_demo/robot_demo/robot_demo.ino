@@ -5,11 +5,11 @@
 MotoronI2C mc(16);
 
 
-// RFID
+// RFID reader setup
 #define RFID_ADDR 0x28
 MFRC522_I2C rfid(RFID_ADDR, -1, &Wire1);
 
-// MOTORS
+// Motor channels on the Motoron shield
 const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
 
@@ -18,13 +18,13 @@ const int RIGHT_DIR = -1;
 
 const int FORWARD_SPEED = -300;
 
-// Speeds for test 5
+// Speeds used for the forward speed test
 const int FORWARD_SLOW = -150;
 const int FORWARD_MEDIUM = -300;
 const int FORWARD_FAST = -500;
 const int FORWARD_FASTEST = -800;
 
-// ENCODER BASED U-TURN
+// U-turn settings using encoder counts
 const int UTURN_SPEED = -400;
 const int UTURN_SLOW_SPEED = -300;
 
@@ -34,7 +34,7 @@ const long UTURN_SLOWDOWN_COUNTS = 250;
 bool uTurnStarted = false;
 bool uTurnFinished = false;
 
-// 90 DEGREE TURN TEST
+// 90-degree turn settings
 const int TURN90_SPEED = -350;
 const int TURN90_SLOW_SPEED = -350;
 
@@ -45,12 +45,12 @@ const long TURN90_SLOWDOWN_COUNTS = 250;
 
 bool turn90InProgress = false;
 
-// -1 = left, 1 = right
+// Direction used for the 90-degree turn test: -1 is left, 1 is right
 int activeTurn90Direction = 0;
 int nextTurn90Direction = -1;
 
 
-// ENCODERS
+// Encoder pins for the left and right motors
 const int leftEncoderPinA = D2;
 const int leftEncoderPinB = D3;
 
@@ -60,17 +60,17 @@ const int rightEncoderPinB = D5;
 volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
 
-// BUTTON AND RGB LED
+// Button and RGB LED pins
 const int buttonPin = D8;
 
-// Common cathode RGB LED
+// The RGB LED is common cathode
 const int r_led = D52;
 const int g_led = D50;
 
-// TEST NUMBER
+// Keeps track of which test is currently running
 int currentTest = 0;
 
-// MOTOR MODES FOR TEST 1
+// Movement modes used in the kill switch/motor test
 int currentMode = 0;
 
 const int MODE_STOP = 0;
@@ -79,7 +79,7 @@ const int MODE_BACKWARD = 2;
 const int MODE_TURN_LEFT = 3;
 const int MODE_TURN_RIGHT = 4;
 
-// SPEED MODES FOR TEST 5
+// Speed modes used in the forward speed test
 int currentSpeedMode = 0;
 
 const int SPEED_STOP = 0;
@@ -88,13 +88,14 @@ const int SPEED_MEDIUM = 2;
 const int SPEED_FAST = 3;
 const int SPEED_FASTEST = 4;
 
+// Button debounce values
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
 
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
 
-// RGB LED BLINk
+// Timing values for blinking the red LED
 unsigned long lastBlinkTime = 0;
 bool ledState = LOW;
 const unsigned long blinkInterval = 500;
@@ -105,7 +106,7 @@ bool rfidMessagePrinted = false;
 bool tofMessagePrinted = false;
 bool irMessagePrinted = false;
 
-// DISTANCE SENSORS
+// Distance sensor setup
 const unsigned long SENSOR_BAUD = 921600;
 
 uint8_t frame1[16];
@@ -120,9 +121,7 @@ uint32_t distance4 = 0;
 
 unsigned long lastTOFPrintTime = 0;
 
-// =====================
-// IR / QTR SENSORS
-// =====================
+// IR reflectance sensor setup
 const uint8_t SensorCount = 9;
 
 const uint8_t sensorPins[SensorCount] = {
@@ -131,13 +130,11 @@ const uint8_t sensorPins[SensorCount] = {
 
 uint16_t sensorValues[SensorCount];
 
-const uint16_t timeout = 2500; // microseconds
+const uint16_t timeout = 2500; // timeout for the RC readings in microseconds
 
 unsigned long lastIRPrintTime = 0;
 
-// =====================
-// SETUP
-// =====================
+// Initial setup
 void setup() {
 
   Serial.begin(115200);
@@ -204,9 +201,7 @@ void setup() {
   rgbOff();
 }
 
-// =====================
-// MAIN LOOP
-// =====================
+// Main loop checks which test has been selected
 void loop() {
 
   checkSerial();
@@ -240,9 +235,7 @@ void loop() {
   }
 }
 
-// =====================
-// SERIAL TEST SELECTION
-// =====================
+// Reads the number typed into Serial Monitor and starts the matching test
 void checkSerial() {
 
   if (Serial.available() > 0) {
@@ -480,9 +473,7 @@ void checkSerial() {
   }
 }
 
-// =====================
-// TEST 1: KILL SWITCH TEST
-// =====================
+// Test 1: button cycles through simple motor modes
 void runKillSwitchTest() {
 
   mc.resetCommandTimeout();
@@ -578,9 +569,7 @@ void runCurrentMode() {
   }
 }
 
-// =====================
-// TEST 5: FORWARD SPEED TEST
-// =====================
+// Test 5: button cycles through different forward speeds
 void runForwardSpeedTest() {
 
   mc.resetCommandTimeout();
@@ -699,9 +688,7 @@ void printSpeedModeName() {
   }
 }
 
-// =====================
-// TEST 6: ENCODER U-TURN
-// =====================
+// Test 6: encoder-based U-turn
 void runUTurnTest() {
 
   mc.resetCommandTimeout();
@@ -766,9 +753,7 @@ void runUTurnTest() {
   }
 }
 
-// =====================
-// TEST 7: LEFT/RIGHT 90 DEGREE TURNS
-// =====================
+// Test 7: button alternates between left and right 90-degree turns
 void runTurn90ToggleTest() {
 
   mc.resetCommandTimeout();
@@ -918,9 +903,7 @@ void resetEncoders() {
   interrupts();
 }
 
-// =====================
-// MOTOR FUNCTIONS
-// =====================
+// Basic motor helper functions
 void driveMotors(int leftSpeed, int rightSpeed) {
 
   mc.setSpeed(LEFT_MOTOR_CHANNEL, LEFT_DIR * leftSpeed);
@@ -933,9 +916,7 @@ void stopMotors() {
   mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
 }
 
-// =====================
-// RGB LED FUNCTIONS
-// =====================
+// RGB LED helper functions
 void rgbOff() {
   digitalWrite(r_led, LOW);
   digitalWrite(g_led, LOW);
@@ -997,9 +978,7 @@ void resetButtonDebounce() {
   lastDebounceTime = millis();
 }
 
-// =====================
-// TEST 2: RFID TEST
-// =====================
+// Test 2: read and print the RFID tag UID
 void runRFIDTest() {
 
   static unsigned long lastScanPrint = 0;
@@ -1048,9 +1027,7 @@ void runRFIDTest() {
   delay(1000);
 }
 
-// =====================
-// TEST 3: DISTANCE SENSOR TEST
-// =====================
+// Test 3: read all four ToF distance sensors
 void runTOFTest() {
 
   if (!tofMessagePrinted) {
@@ -1171,9 +1148,7 @@ void clearTOFSerialBuffers() {
   }
 }
 
-// =====================
-// TEST 4: IR SENSOR TEST
-// =====================
+// Test 4: read the IR reflectance array values
 void runIRTest() {
 
   if (!irMessagePrinted) {
@@ -1207,7 +1182,7 @@ void runIRTest() {
 
 void readQTR_RC() {
 
-  // Step 1: charge all sensor capacitors
+  // First, charge each sensor line
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], OUTPUT);
     digitalWrite(sensorPins[i], HIGH);
@@ -1215,7 +1190,7 @@ void readQTR_RC() {
 
   delayMicroseconds(10);
 
-  // Step 2: switch pins to input and measure discharge time
+  // Then switch to input mode and time how long each line takes to discharge
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], INPUT);
     sensorValues[i] = timeout;
@@ -1239,9 +1214,7 @@ void readQTR_RC() {
   }
 }
 
-// =====================
-// ENCODERS
-// =====================
+// Encoder update functions
 void readLeftEncoder() {
 
   if (digitalRead(leftEncoderPinA) == digitalRead(leftEncoderPinB)) {
