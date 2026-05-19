@@ -16,9 +16,9 @@ void setup() {
     delay(10);
   }
 
-  delay(1000);   // Give Serial Monitor time to fully open
+  delay(1000);  
 
-  Wire1.begin();  // GIGA R1 I2C
+  Wire1.begin(); 
   delay(500);
 
   rfid.PCD_Init();

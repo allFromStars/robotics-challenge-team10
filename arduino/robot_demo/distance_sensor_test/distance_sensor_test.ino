@@ -1,26 +1,3 @@
-// Waveshare TOF Laser Range Sensor Mini
-// Arduino GIGA R1 - 4 UART sensors
-//
-// Sensor 1:
-//   TX -> D0  / RX0
-//   RX -> D1  / TX0
-//
-// Sensor 2:
-//   TX -> D19 / RX1
-//   RX -> D18 / TX1
-//
-// Sensor 3:
-//   TX -> D17 / RX2
-//   RX -> D16 / TX2
-//
-// Sensor 4:
-//   TX -> D15 / RX3
-//   RX -> D14 / TX3
-//
-// All sensors:
-//   VCC -> 5V
-//   GND -> GND
-
 const unsigned long SENSOR_BAUD = 921600;
 
 uint8_t frame1[16];
@@ -36,8 +13,6 @@ uint32_t distance4 = 0;
 bool readTOFFrame(HardwareSerial &port, uint8_t *frame) {
   while (port.available()) {
     uint8_t b = port.read();
-
-    // Frame starts with 0x57
     if (b != 0x57) {
       continue;
     }
@@ -47,7 +22,6 @@ bool readTOFFrame(HardwareSerial &port, uint8_t *frame) {
     unsigned long startTime = millis();
     int index = 1;
 
-    // Read remaining 15 bytes
     while (index < 16 && millis() - startTime < 50) {
       if (port.available()) {
         frame[index] = port.read();
@@ -59,12 +33,12 @@ bool readTOFFrame(HardwareSerial &port, uint8_t *frame) {
       return false;
     }
 
-    // Basic frame check
+  
     if (frame[1] != 0x00 || frame[2] != 0xFF) {
       return false;
     }
 
-    // Checksum: sum of first 15 bytes, low 8 bits
+   
     uint8_t checksum = 0;
     for (int i = 0; i < 15; i++) {
       checksum += frame[i];
@@ -81,7 +55,6 @@ bool readTOFFrame(HardwareSerial &port, uint8_t *frame) {
 }
 
 uint32_t getDistanceMM(uint8_t *frame) {
-  // Distance is 24-bit little-endian
   return ((uint32_t)frame[8]) |
          ((uint32_t)frame[9] << 8) |
          ((uint32_t)frame[10] << 16);

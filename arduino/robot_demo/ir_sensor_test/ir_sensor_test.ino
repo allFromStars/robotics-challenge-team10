@@ -9,7 +9,7 @@ uint16_t sensorValues[SensorCount];
 const uint16_t timeout = 2500; // microseconds
 
 void readQTR_RC() {
-  // Step 1: charge all sensor capacitors
+  //charge all sensor capacitors
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], OUTPUT);
     digitalWrite(sensorPins[i], HIGH);
@@ -17,7 +17,7 @@ void readQTR_RC() {
 
   delayMicroseconds(10);
 
-  // Step 2: switch pins to input and measure discharge time
+  // switch pins to input and measure discharge time
   for (uint8_t i = 0; i < SensorCount; i++) {
     pinMode(sensorPins[i], INPUT);
     sensorValues[i] = timeout;

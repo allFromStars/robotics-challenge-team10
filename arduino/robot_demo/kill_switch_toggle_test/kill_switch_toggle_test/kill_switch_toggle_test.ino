@@ -4,17 +4,11 @@
 // Initialize with address 16
 MotoronI2C mc(16);
 
-
-// --- MOTOR CONFIGURATION ---
 const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
 
 const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
-// ---------------------------
-
-
-// --- ENCODER CONFIGURATION ---
 const int leftEncoderPinA = D2;
 const int leftEncoderPinB = D3;
 
@@ -23,21 +17,11 @@ const int rightEncoderPinB = D5;
 
 volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
-// -----------------------------
 
-
-// --- BUTTON AND LED ---
 const int buttonPin = D8;
 const int redLedPin = D9;
-// ----------------------
-
-
-// Full speed
-// Your previous working forward movement used -800
 const int FORWARD_SPEED = -300;
 
-
-// --- MODES ---
 int currentMode = 0;
 
 const int MODE_STOP = 0;
@@ -46,23 +30,17 @@ const int MODE_BACKWARD = 2;
 const int MODE_TURN_LEFT = 3;
 const int MODE_TURN_RIGHT = 4;
 
-
-// --- BUTTON DEBOUNCE ---
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
 
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
 
-
-// --- LED BLINK ---
 unsigned long lastBlinkTime = 0;
 bool ledState = LOW;
 
 const unsigned long blinkInterval = 500;
 
-
-// --- PRINTING ---
 unsigned long lastPrintTime = 0;
 
 
@@ -150,8 +128,6 @@ void checkButton() {
     if (reading != stableButtonState) {
 
       stableButtonState = reading;
-
-      // INPUT_PULLUP means pressed = LOW
       if (stableButtonState == LOW) {
 
         currentMode++;
@@ -199,16 +175,12 @@ void runCurrentMode() {
   else if (currentMode == MODE_TURN_LEFT) {
 
     digitalWrite(redLedPin, LOW);
-
-    // Left tread backward, right tread forward
     driveMotors(-FORWARD_SPEED, FORWARD_SPEED);
   }
 
   else if (currentMode == MODE_TURN_RIGHT) {
 
     digitalWrite(redLedPin, LOW);
-
-    // Left tread forward, right tread backward
     driveMotors(FORWARD_SPEED, -FORWARD_SPEED);
   }
 }

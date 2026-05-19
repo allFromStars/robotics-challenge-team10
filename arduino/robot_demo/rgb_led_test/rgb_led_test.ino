@@ -1,7 +1,7 @@
 int r_led = 52;    
 int g_led = 50;     
 
-int switchPin = 8;  // Microswitch NO connected here 
+int switchPin = 8;
 
 void setup() { 
 
@@ -25,8 +25,6 @@ void loop() {
 
   } else { 
 
-
-    // Lever pressed: LED green 
     analogWrite(r_led, 0); 
 
     analogWrite(g_led, 255); 
