@@ -1,280 +1,195 @@
 #include <Wire.h>
 #include <Motoron.h>
+#include <QTRSensors.h>
 
-// =========================
-// MOTOR SETUP
-// =========================
-
+// ---------------- MOTORON SETUP ----------------
 MotoronI2C mc(16);
 
 const int LEFT_MOTOR_CHANNEL = 1;
-const int RIGHT_MOTOR_CHANNEL = 2;  
+const int RIGHT_MOTOR_CHANNEL = 2;
 
 const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
 
-const int BASE_SPEED = -300;
+// Adjust these after testing
+const int BASE_SPEED = 300;
+const int SLOW_SPEED = 120;
+const int TURN_SPEED = 260;
 
-// =========================
-// BUTTON + LED
-// =========================
-
-const int buttonPin = D8;
-const int redLedPin = D9;
-
-bool robotRunning = false;
-
-bool lastButtonReading = HIGH;
-bool stableButtonState = HIGH;
-
-unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 50;
-
-unsigned long lastBlinkTime = 0;
-bool ledState = LOW;
-
-const unsigned long blinkInterval = 500;
-
-// =========================
-// QTR SENSOR ARRAY
-// =========================
+// ---------------- QTR SETUP ----------------
+QTRSensors qtr;
 
 const uint8_t SensorCount = 9;
+uint16_t sensorValues[SensorCount];
 
-const uint8_t sensorPins[SensorCount] = {
+// Change these pins if your wiring is different
+const uint8_t qtrPins[SensorCount] = {
   22, 23, 24, 25, 26, 27, 28, 29, 30
 };
 
-uint16_t sensorValues[SensorCount];
+// Threshold after calibration.
+// qtr.readCalibrated() gives values around 0–1000.
+// For black line, values are usually high when using readLineBlack logic.
+const int BLACK_THRESHOLD = 500;
 
-const uint16_t timeout = 2500;
+// ---------------- LINE STATE ----------------
+enum LastDirection {
+  LAST_LEFT,
+  LAST_RIGHT,
+  LAST_STRAIGHT
+};
 
-// =========================
-// SETUP
-// =========================
+LastDirection lastDirection = LAST_STRAIGHT;
 
-void setup() {
-
-  Serial.begin(115200);
-
-  Wire1.begin();
-  mc.setBus(&Wire1);
-
-  mc.reinitialize();
-  mc.clearResetFlag();
-
-  mc.setCommandTimeoutMilliseconds(1000);
-
-  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 200);
-  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 300);
-
-  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, 200);
-  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, 300);
-
-  pinMode(buttonPin, INPUT_PULLUP);
-  pinMode(redLedPin, OUTPUT);
-
-  stopMotors();
-
-  Serial.println("LINE FOLLOWING TEST");
+// ---------------- MOTOR FUNCTIONS ----------------
+void setMotorSpeeds(int leftSpeed, int rightSpeed) {
+  mc.setSpeed(LEFT_MOTOR_CHANNEL, leftSpeed * LEFT_DIR);
+  mc.setSpeed(RIGHT_MOTOR_CHANNEL, rightSpeed * RIGHT_DIR);
 }
 
-// =========================
-// MAIN LOOP
-// =========================
-
-void loop() {
-
-  mc.resetCommandTimeout();
-
-  checkButton();
-
-  if (!robotRunning) {
-
-    stopMotors();
-    blinkStoppedLed();
-
-    return;
-  }
-
-  digitalWrite(redLedPin, LOW);
-
-  readQTR_RC();
-
-  runBangBangLineFollowing();
+void moveForward() {
+  setMotorSpeeds(BASE_SPEED, BASE_SPEED);
 }
 
-// =========================
-// LINE FOLLOWING
-// =========================
-
-void runBangBangLineFollowing() {
-
-  long leftSum =
-    sensorValues[0] +
-    sensorValues[1] +
-    sensorValues[2];
-
-  long centerSum =
-    sensorValues[3] +
-    sensorValues[4] +
-    sensorValues[5];
-
-  long rightSum =
-    sensorValues[6] +
-    sensorValues[7] +
-    sensorValues[8];
-
-  Serial.print(leftSum);
-  Serial.print(" | ");
-
-  Serial.print(centerSum);
-  Serial.print(" | ");
-
-  Serial.println(rightSum);
-
-  // IMPORTANT:
-  // Assumes black line = larger values
-
-  if (centerSum > leftSum &&
-      centerSum > rightSum) {
-
-    // Go forward
-    driveMotors(BASE_SPEED, BASE_SPEED);
-  }
-
-  else if (leftSum > rightSum) {
-
-    // Turn left
-    driveMotors(BASE_SPEED / 2, BASE_SPEED);
-  }
-
-  else if (rightSum > leftSum) {
-
-    // Turn right
-    driveMotors(BASE_SPEED, BASE_SPEED / 2);
-  }
-
-  else {
-
-    stopMotors();
-  }
+void turnLeft() {
+  setMotorSpeeds(SLOW_SPEED, TURN_SPEED);
 }
 
-// =========================
-// MOTOR FUNCTIONS
-// =========================
+void turnRight() {
+  setMotorSpeeds(TURN_SPEED, SLOW_SPEED);
+}
 
-void driveMotors(int leftSpeed, int rightSpeed) {
+void searchLeft() {
+  setMotorSpeeds(-SLOW_SPEED, SLOW_SPEED);
+}
 
-  mc.setSpeed(
-    LEFT_MOTOR_CHANNEL,
-    LEFT_DIR * leftSpeed
-  );
-
-  mc.setSpeed(
-    RIGHT_MOTOR_CHANNEL,
-    RIGHT_DIR * rightSpeed
-  );
+void searchRight() {
+  setMotorSpeeds(SLOW_SPEED, -SLOW_SPEED);
 }
 
 void stopMotors() {
-
-  mc.setSpeed(LEFT_MOTOR_CHANNEL, 0);
-  mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
+  setMotorSpeeds(0, 0);
 }
 
-// =========================
-// BUTTON
-// =========================
+// ---------------- SENSOR LOGIC ----------------
+bool isBlack(int index) {
+  return sensorValues[index] > BLACK_THRESHOLD;
+}
 
-void checkButton() {
+bool leftOnLine() {
+  return isBlack(0) || isBlack(1) || isBlack(2);
+}
 
-  bool reading = digitalRead(buttonPin);
+bool centreOnLine() {
+  return isBlack(3) || isBlack(4) || isBlack(5);
+}
 
-  if (reading != lastButtonReading) {
-    lastDebounceTime = millis();
+bool rightOnLine() {
+  return isBlack(6) || isBlack(7) || isBlack(8);
+}
+
+bool anySensorBlack() {
+  for (int i = 0; i < SensorCount; i++) {
+    if (isBlack(i)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool allSensorsBlack() {
+  for (int i = 0; i < SensorCount; i++) {
+    if (!isBlack(i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void printSensorValues() {
+  for (int i = 0; i < SensorCount; i++) {
+    Serial.print(sensorValues[i]);
+    Serial.print('\t');
+  }
+  Serial.println();
+}
+
+// ---------------- CALIBRATION ----------------
+void calibrateQTR() {
+  Serial.println("Calibrating QTR sensors...");
+  Serial.println("Move the sensor array across black line and white floor.");
+
+  for (uint16_t i = 0; i < 400; i++) {
+    qtr.calibrate();
+    delay(5);
   }
 
-  if ((millis() - lastDebounceTime) > debounceDelay) {
+  Serial.println("Calibration complete.");
+}
 
-    if (reading != stableButtonState) {
+// ---------------- SETUP ----------------
+void setup() {
+  Serial.begin(9600);
+  delay(1000);
 
-      stableButtonState = reading;
+  Wire.begin();
 
-      if (stableButtonState == LOW) {
+  mc.reinitialize();
+  mc.disableCrc();
+  mc.clearResetFlag();
 
-        robotRunning = !robotRunning;
+  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 200);
+  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 300);
+  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, 200);
+  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, 300);
 
-        Serial.print("Robot running: ");
-        Serial.println(robotRunning);
-      }
+  qtr.setTypeRC();
+  qtr.setSensorPins(qtrPins, SensorCount);
+
+  calibrateQTR();
+
+  stopMotors();
+
+  Serial.println("Bang-bang line follower ready.");
+  delay(1000);
+}
+
+// ---------------- MAIN LOOP ----------------
+void loop() {
+  qtr.readCalibrated(sensorValues);
+
+  printSensorValues();
+
+  if (allSensorsBlack()) {
+    // Possible intersection.
+    // For now, just keep going forward.
+    moveForward();
+    lastDirection = LAST_STRAIGHT;
+  }
+  else if (centreOnLine()) {
+    moveForward();
+    lastDirection = LAST_STRAIGHT;
+  }
+  else if (leftOnLine()) {
+    turnLeft();
+    lastDirection = LAST_LEFT;
+  }
+  else if (rightOnLine()) {
+    turnRight();
+    lastDirection = LAST_RIGHT;
+  }
+  else {
+    // Line lost: recover using last known direction.
+    if (lastDirection == LAST_LEFT) {
+      searchLeft();
+    }
+    else if (lastDirection == LAST_RIGHT) {
+      searchRight();
+    }
+    else {
+      moveForward();
     }
   }
 
-  lastButtonReading = reading;
-}
-
-// =========================
-// LED BLINK
-// =========================
-
-void blinkStoppedLed() {
-
-  if (millis() - lastBlinkTime >= blinkInterval) {
-
-    lastBlinkTime = millis();
-
-    ledState = !ledState;
-
-    digitalWrite(redLedPin, ledState);
-  }
-}
-
-// =========================
-// QTR SENSOR READING
-// =========================
-
-void readQTR_RC() {
-
-  for (uint8_t i = 0; i < SensorCount; i++) {
-
-    pinMode(sensorPins[i], OUTPUT);
-    digitalWrite(sensorPins[i], HIGH);
-  }
-
-  delayMicroseconds(10);
-
-  for (uint8_t i = 0; i < SensorCount; i++) {
-
-    pinMode(sensorPins[i], INPUT);
-
-    sensorValues[i] = timeout;
-  }
-
-  unsigned long startTime = micros();
-
-  bool allDone = false;
-
-  while (!allDone &&
-         (micros() - startTime < timeout)) {
-
-    allDone = true;
-
-    for (uint8_t i = 0; i < SensorCount; i++) {
-
-      if (sensorValues[i] == timeout) {
-
-        if (digitalRead(sensorPins[i]) == LOW) {
-
-          sensorValues[i] =
-            micros() - startTime;
-
-        } else {
-
-          allDone = false;
-        }
-      }
-    }
-  }
+  delay(10);
 }
