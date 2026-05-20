@@ -6,6 +6,10 @@ const uint8_t sensorPins[SensorCount] = {
 
 uint16_t sensorValues[SensorCount];      // raw readings
 uint16_t calibratedValues[SensorCount];  // calibrated readings from 0 to 1000
+uint16_t averagedValues[SensorCount];    // average of every 10 calibrated readings
+
+uint32_t sensorSums[SensorCount];        // stores totals for averaging
+uint8_t sampleCount = 0;                 // counts how many readings have been collected
 
 uint16_t sensorMin[SensorCount];
 uint16_t sensorMax[SensorCount];
@@ -14,6 +18,9 @@ const uint16_t timeout = 5000; // microseconds
 
 // Change this if you want longer or shorter calibration
 const unsigned long CALIBRATION_TIME_MS = 12000; // 12 seconds
+
+// Number of readings used for each average
+const uint8_t AVERAGE_SAMPLE_COUNT = 10;
 
 // Tune this if line detection is too sensitive or not sensitive enough
 const uint16_t LINE_THRESHOLD = 200;
@@ -146,9 +153,31 @@ void calculateCalibratedValues() {
   }
 }
 
+void addReadingToAverage() {
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    sensorSums[i] = sensorSums[i] + calibratedValues[i];
+  }
+
+  sampleCount++;
+}
+
+void calculateAverageValues() {
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    averagedValues[i] = sensorSums[i] / AVERAGE_SAMPLE_COUNT;
+  }
+}
+
+void resetAverageValues() {
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    sensorSums[i] = 0;
+  }
+
+  sampleCount = 0;
+}
+
 bool isLineDetected() {
   for (uint8_t i = 0; i < SensorCount; i++) {
-    if (calibratedValues[i] > LINE_THRESHOLD) {
+    if (averagedValues[i] > LINE_THRESHOLD) {
       return true;
     }
   }
@@ -161,7 +190,7 @@ uint16_t readLineBlackManual() {
   uint32_t total = 0;
 
   for (uint8_t i = 0; i < SensorCount; i++) {
-    uint16_t value = calibratedValues[i];
+    uint16_t value = averagedValues[i];
 
     // sensor positions are 0, 1000, 2000, ... 8000
     weightedSum += (uint32_t)value * (i * 1000);
@@ -189,7 +218,10 @@ void setup() {
 
   calibrateSensors();
 
-  Serial.println("Now printing calibrated sensor values and line position.");
+  // reset averaging memory
+  resetAverageValues();
+
+  Serial.println("Now printing 10-sample averaged calibrated sensor values and line position.");
   Serial.println("0 = wood / lighter surface");
   Serial.println("1000 = black line / darker surface");
   Serial.println("Position range: 0 to 8000, centre is around 4000");
@@ -199,27 +231,37 @@ void setup() {
 void loop() {
   readQTR_RC();
   calculateCalibratedValues();
+  addReadingToAverage();
 
-  bool lineDetected = isLineDetected();
-  uint16_t position = readLineBlackManual();
+  // only display after 10 readings have been collected
+  if (sampleCount >= AVERAGE_SAMPLE_COUNT) {
+    calculateAverageValues();
 
-  for (uint8_t i = 0; i < SensorCount; i++) {
-    Serial.print("S");
-    Serial.print(i + 1);
-    Serial.print(": ");
-    Serial.print(calibratedValues[i]);
+    bool lineDetected = isLineDetected();
+    uint16_t position = readLineBlackManual();
 
-    if (i < SensorCount - 1) {
-      Serial.print(" | ");
+    Serial.print("10-sample average -> ");
+
+    for (uint8_t i = 0; i < SensorCount; i++) {
+      Serial.print("S");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(averagedValues[i]);
+
+      if (i < SensorCount - 1) {
+        Serial.print(" | ");
+      }
     }
+
+    if (lineDetected) {
+      Serial.print(" | Position: ");
+      Serial.println(position);
+    } else {
+      Serial.println(" | NO LINE DETECTED");
+    }
+
+    resetAverageValues();
   }
 
-  if (lineDetected) {
-    Serial.print(" | Position: ");
-    Serial.println(position);
-  } else {
-    Serial.println(" | NO LINE DETECTED");
-  }
-
-  delay(250);
+  delay(50);
 }
