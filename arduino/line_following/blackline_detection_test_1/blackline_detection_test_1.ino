@@ -10,10 +10,10 @@ uint16_t calibratedValues[SensorCount];  // calibrated readings from 0 to 1000
 uint16_t sensorMin[SensorCount];
 uint16_t sensorMax[SensorCount];
 
-const uint16_t timeout = 2500; // microseconds
+const uint16_t timeout = 5000; // microseconds
 
 // Change this if you want longer or shorter calibration
-const unsigned long CALIBRATION_TIME_MS = 10000; // 10 seconds
+const unsigned long CALIBRATION_TIME_MS = 12000; // 12 seconds
 
 // Tune this if line detection is too sensitive or not sensitive enough
 const uint16_t LINE_THRESHOLD = 200;
