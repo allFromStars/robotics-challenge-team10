@@ -3,222 +3,285 @@
 #include <MiniMessenger.h>
 #include "secrets.h"
 
-/*
- * GIGA Motoron WiFi Kill Switch Test
- *
- * Hardware:
- * - Arduino GIGA
- * - 1 Motoron motor driver on Wire1
- * - 2 DC motors
- * - 1 red LED
- *
- * Behaviour:
- * - Upload / waiting / disabled  -> motors stop, red LED slow blink
- * - Dashboard enable             -> motors run, red LED ON
- * - Dashboard disable            -> motors stop, red LED slow blink
- * - Emergency command            -> motors stop, red LED fast blink
- * - Heartbeat timeout            -> motors stop, red LED fast blink
- */
-
 MiniMessenger messenger;
-
-// Motoron address confirmed by I2C scanner:
-// 0x10 hex = 16 decimal
 MotoronI2C mc(16);
 
-// --- Board configuration ---
+// Must match dashboard board name.
 const char* BoardId = "Igor10";
 
-// --- Motor configuration ---
+// Motoron setup from robot_demo.ino
 const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
 
 const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
 
-const int MOTOR_SPEED = 300;
+const int FORWARD_SPEED = -300;
 
-// --- LED configuration ---
-const int RED_LED_PIN = 9;
+// Mechanical switch + RGB LED from robot_demo.ino
+const int switchPin = D8;
 
-// --- Safety state ---
-bool safetyEnabled = false;
+// Common cathode RGB LED.
+// Only red is used. Green stays off.
+const int r_led = D52;
+const int g_led = D50;
+
+// If the switch behaves backwards, change this to HIGH.
+const int SWITCH_ENABLED_STATE = LOW;
+
+// Safety state
+bool wifiEnabled = false;
 bool emergencyActive = false;
 bool heartbeatTimeout = false;
+bool localSwitchEnabled = false;
 
-// --- Timing variables ---
+// Timing
 unsigned long lastRegisterMs = 0;
 unsigned long lastHeartbeatMs = 0;
 unsigned long lastBlinkMs = 0;
+unsigned long lastStatusPrintMs = 0;
 
 const unsigned long HEARTBEAT_TIMEOUT_MS = 1000;
 
+// Switch debounce
+bool lastSwitchReading = HIGH;
+bool stableSwitchState = HIGH;
+unsigned long lastDebounceMs = 0;
+const unsigned long debounceDelay = 50;
 
-// Stop both motors immediately
+bool wasConnected = false;
+
+
+void driveMotors(int leftSpeed, int rightSpeed) {
+  mc.setSpeed(LEFT_MOTOR_CHANNEL, LEFT_DIR * leftSpeed);
+  mc.setSpeed(RIGHT_MOTOR_CHANNEL, RIGHT_DIR * rightSpeed);
+}
+
+
 void stopMotors() {
-    mc.setSpeed(LEFT_MOTOR_CHANNEL, 0);
-    mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
+  mc.setSpeed(LEFT_MOTOR_CHANNEL, 0);
+  mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
 }
 
 
-// Simple motor movement for testing
-void runMotors() {
-    mc.setSpeed(LEFT_MOTOR_CHANNEL, LEFT_DIR * MOTOR_SPEED);
-    mc.setSpeed(RIGHT_MOTOR_CHANNEL, RIGHT_DIR * MOTOR_SPEED);
+void runRobot() {
+  driveMotors(FORWARD_SPEED, FORWARD_SPEED);
 }
 
 
-// LED status indicator
+void rgbOff() {
+  digitalWrite(r_led, LOW);
+  digitalWrite(g_led, LOW);
+}
+
+
+void setRed() {
+  digitalWrite(r_led, HIGH);
+  digitalWrite(g_led, LOW);
+}
+
+
+void setGreen() {
+  rgbOff();
+}
+
+
+void blinkRed(unsigned long intervalMs) {
+  if (millis() - lastBlinkMs >= intervalMs) {
+    lastBlinkMs = millis();
+
+    if (digitalRead(r_led) == HIGH) {
+      rgbOff();
+    } else {
+      setRed();
+    }
+  }
+}
+
+
+void updateSwitch() {
+  bool reading = digitalRead(switchPin);
+
+  if (reading != lastSwitchReading) {
+    lastDebounceMs = millis();
+  }
+
+  if (millis() - lastDebounceMs > debounceDelay) {
+    if (reading != stableSwitchState) {
+      stableSwitchState = reading;
+
+      Serial.print("Mechanical switch: ");
+      Serial.println(stableSwitchState == SWITCH_ENABLED_STATE ? "ENABLED" : "DISABLED");
+    }
+  }
+
+  lastSwitchReading = reading;
+  localSwitchEnabled = (stableSwitchState == SWITCH_ENABLED_STATE);
+}
+
+
+bool robotAllowedToMove() {
+  return wifiEnabled && localSwitchEnabled && !emergencyActive && !heartbeatTimeout;
+}
+
+
 void updateLed() {
-    // Emergency or heartbeat timeout: fast blink
-    if (emergencyActive || heartbeatTimeout) {
-        if (millis() - lastBlinkMs > 150) {
-            lastBlinkMs = millis();
-            digitalWrite(RED_LED_PIN, !digitalRead(RED_LED_PIN));
-        }
-        return;
-    }
+  if (robotAllowedToMove()) {
+    rgbOff();
+    return;
+  }
 
-    // Enabled and safe: LED ON
-    if (safetyEnabled) {
-        digitalWrite(RED_LED_PIN, HIGH);
-        return;
-    }
+  if (emergencyActive || heartbeatTimeout) {
+    blinkRed(150);
+    return;
+  }
 
-    // Waiting / disabled / motor not allowed: slow blink
-    if (millis() - lastBlinkMs > 500) {
-        lastBlinkMs = millis();
-        digitalWrite(RED_LED_PIN, !digitalRead(RED_LED_PIN));
-    }
+  blinkRed(500);
 }
 
 
-// Runs every time an MQTT message arrives
 void onMessage(const MessageMetadata& metadata, const uint8_t* payload, size_t length) {
-    char msg[128];
+  char msg[128];
 
-    size_t copyLen = (length < 127) ? length : 127;
-    memcpy(msg, payload, copyLen);
-    msg[copyLen] = '\0';
+  size_t copyLen = (length < 127) ? length : 127;
+  memcpy(msg, payload, copyLen);
+  msg[copyLen] = '\0';
 
-    Serial.print("Message received: ");
-    Serial.println(msg);
+  Serial.print("Message from ");
+  Serial.print(metadata.fromBoardId);
+  Serial.print(" to ");
+  Serial.print(metadata.target);
+  Serial.print(": ");
+  Serial.println(msg);
 
-    // Heartbeat message from server
-    if (strstr(msg, "type=heartbeat")) {
-        lastHeartbeatMs = millis();
-        heartbeatTimeout = false;
+  if (strstr(msg, "type=heartbeat")) {
+    lastHeartbeatMs = millis();
+    heartbeatTimeout = false;
 
-        if (strstr(msg, "enable=1")) {
-            safetyEnabled = true;
-            emergencyActive = false;
-            Serial.println("SAFETY: Enabled by heartbeat");
-        }
-        else if (strstr(msg, "enable=0")) {
-            safetyEnabled = false;
-            emergencyActive = false;
-            stopMotors();
-            Serial.println("SAFETY: Disabled by heartbeat");
-        }
+    if (strstr(msg, "enable=1")) {
+      wifiEnabled = true;
+      emergencyActive = false;
+      Serial.println("SAFETY: WiFi enabled by heartbeat");
     }
-
-    // Emergency stop
-    if (strstr(msg, "type=emergency enabled=true")) {
-        safetyEnabled = false;
-        emergencyActive = true;
-        stopMotors();
-        Serial.println("SAFETY: Emergency active");
+    else if (strstr(msg, "enable=0")) {
+      wifiEnabled = false;
+      emergencyActive = false;
+      stopMotors();
+      Serial.println("SAFETY: WiFi disabled by heartbeat");
     }
+  }
 
-    // Individual disable
-    if (strstr(msg, "type=disable enabled=false")) {
-        safetyEnabled = false;
-        emergencyActive = false;
-        stopMotors();
-        Serial.println("SAFETY: Individual disable active");
-    }
+  if (strstr(msg, "type=emergency") && strstr(msg, "enabled=true")) {
+    wifiEnabled = false;
+    emergencyActive = true;
+    stopMotors();
+    Serial.println("SAFETY: Emergency active");
+  }
+
+  if (strstr(msg, "type=disable") && strstr(msg, "enabled=false")) {
+    wifiEnabled = false;
+    emergencyActive = false;
+    stopMotors();
+    Serial.println("SAFETY: Individual disable active");
+  }
 }
 
 
 void setup() {
-    Serial.begin(115200);
+  Serial.begin(115200);
 
-    pinMode(RED_LED_PIN, OUTPUT);
-    digitalWrite(RED_LED_PIN, LOW);
+  pinMode(switchPin, INPUT_PULLUP);
 
-    Serial.println("\n--- GIGA MOTORON WIFI KILL SWITCH TEST STARTING ---");
+  pinMode(r_led, OUTPUT);
+  pinMode(g_led, OUTPUT);
+  rgbOff();
 
-    // --- Motoron setup on Wire1 ---
-    Wire1.begin();
-    mc.setBus(&Wire1);
+  lastSwitchReading = digitalRead(switchPin);
+  stableSwitchState = lastSwitchReading;
+  localSwitchEnabled = (stableSwitchState == SWITCH_ENABLED_STATE);
 
-    mc.reinitialize();
-    mc.disableCrc();
-    mc.clearResetFlag();
+  Serial.println("\n--- TEAM 10 WIFI + MECHANICAL KILL SWITCH STARTING ---");
 
-    mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 300);
-    mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 300);
+  Wire1.begin();
+  mc.setBus(&Wire1);
 
-    mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, 300);
-    mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, 300);
+  mc.reinitialize();
+  mc.clearResetFlag();
+  mc.setCommandTimeoutMilliseconds(1000);
 
-    stopMotors();
+  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 200);
+  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 300);
 
-    // --- MiniMessenger setup ---
-    messenger.onMessage(onMessage);
+  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, 200);
+  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, 300);
 
-    messenger.begin(
-        WIFI_SSID,
-        WIFI_PASSWORD,
-        BROKER_HOST,
-        BROKER_PORT,
-        GROUP_ID,
-        BoardId
-    );
+  stopMotors();
 
-    Serial.println("Network connecting...");
+  messenger.onMessage(onMessage);
+  messenger.begin(
+    WIFI_SSID,
+    WIFI_PASSWORD,
+    BROKER_HOST,
+    BROKER_PORT,
+    GROUP_ID,
+    BoardId
+  );
+
+  Serial.print("Initial mechanical switch: ");
+  Serial.println(localSwitchEnabled ? "ENABLED" : "DISABLED");
+
+  Serial.println("Network connecting...");
 }
 
 
 void loop() {
-    // Required for receiving MQTT messages
-    messenger.loop();
+  messenger.loop();
+  mc.resetCommandTimeout();
 
-    // Register with server every 10 seconds
-    if (millis() - lastRegisterMs > 10000 || lastRegisterMs == 0) {
-        lastRegisterMs = millis();
+  updateSwitch();
 
-        char reg[64];
+  bool connected = messenger.isConnected();
 
-        snprintf(
-            reg,
-            sizeof(reg),
-            "type=register team_id=%s board_id=%s",
-            GROUP_ID,
-            BoardId
-        );
+  if (connected != wasConnected) {
+    wasConnected = connected;
+    Serial.print("Network/MQTT: ");
+    Serial.println(connected ? "connected" : "disconnected");
+  }
 
-        messenger.sendToBoard("server", reg);
-        Serial.println("Registered with server.");
-    }
+  if (!connected && millis() - lastStatusPrintMs >= 2000) {
+    lastStatusPrintMs = millis();
+    Serial.println("Waiting for WiFi/MQTT connection...");
+  }
 
-    // Heartbeat timeout check
-    if (safetyEnabled && millis() - lastHeartbeatMs > HEARTBEAT_TIMEOUT_MS) {
-        safetyEnabled = false;
-        heartbeatTimeout = true;
-        stopMotors();
-        Serial.println("SAFETY: Heartbeat timeout");
-    }
+  if (connected && (millis() - lastRegisterMs >= 10000 || lastRegisterMs == 0)) {
+    lastRegisterMs = millis();
 
-    // LED must update continuously
-    updateLed();
+    char reg[64];
+    snprintf(
+      reg,
+      sizeof(reg),
+      "type=register team_id=%s board_id=%s",
+      GROUP_ID,
+      BoardId
+    );
 
-    // Safety gate
-    if (!safetyEnabled) {
-        stopMotors();
-        return;
-    }
+    messenger.sendToBoard("server", reg);
+    Serial.println("Registered with server.");
+  }
 
-    // Motors only run when WiFi safety is enabled
-    runMotors();
+  if (wifiEnabled && millis() - lastHeartbeatMs > HEARTBEAT_TIMEOUT_MS) {
+    wifiEnabled = false;
+    heartbeatTimeout = true;
+    stopMotors();
+    Serial.println("SAFETY: Heartbeat timeout");
+  }
+
+  updateLed();
+
+  if (!robotAllowedToMove()) {
+    stopMotors();
+    return;
+  }
+
+  runRobot();
 }
