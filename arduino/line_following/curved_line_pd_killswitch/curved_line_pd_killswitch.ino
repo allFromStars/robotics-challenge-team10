@@ -16,12 +16,21 @@ const int RIGHT_DIR = -1;
 // On our current robot code, forward movement uses negative logical speeds.
 const int FORWARD_SIGN = -1;
 
-// Straight line test speeds
-const int BASE_SPEED = 90;
-const int MAX_SPEED = 180;
+// Mechanical button wiring:
+// one side of the button -> GND
+// other side -> D8
+// INPUT_PULLUP means released = HIGH, pressed = LOW.
+const int CONTROL_BUTTON_PIN = D8;
+const int CONTROL_BUTTON_PRESSED = LOW;
 
-// Start with P only for straight line following
-float Kp = 0.025;
+// Curved line test speeds. Start slow and increase after stable tests.
+const int BASE_SPEED = 300;
+const int MAX_SPEED = 450;
+const int SEARCH_SPEED = 200;
+
+// PD controller values for curved line following.
+float Kp = 0.040;
+float Kd = 0.10;
 
 // =====================
 // IR / QTR RC SETUP
@@ -41,7 +50,7 @@ uint16_t sensorMax[SensorCount];
 
 const uint16_t timeout = 2500; // microseconds
 
-const unsigned long CALIBRATION_TIME_MS = 10000;
+const unsigned long CALIBRATION_TIME_MS = 12000;
 
 // For 9 sensors, position goes from 0 to 8000.
 // Centre is 4000.
@@ -54,9 +63,16 @@ const uint16_t LINE_THRESHOLD = 200;
 const uint16_t LINE_TOTAL_THRESHOLD = 50;
 
 uint16_t lastLinePosition = LINE_CENTER;
+int lastError = 0;
 
 bool robotEnabled = false;
+bool keyboardControlEnabled = false;
+bool lastButtonReading = HIGH;
+bool stableButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
 unsigned long lastDebugPrintTime = 0;
+
+const unsigned long debounceDelay = 50;
 
 // =====================
 // MOTOR HELPERS
@@ -89,6 +105,14 @@ void driveForwardMagnitudes(int leftMagnitude, int rightMagnitude) {
   rightMagnitude = clampMagnitude(rightMagnitude);
 
   driveMotors(FORWARD_SIGN * leftMagnitude, FORWARD_SIGN * rightMagnitude);
+}
+
+void searchLeft() {
+  driveMotors(SEARCH_SPEED, -SEARCH_SPEED);
+}
+
+void searchRight() {
+  driveMotors(-SEARCH_SPEED, SEARCH_SPEED);
 }
 
 // =====================
@@ -197,7 +221,6 @@ void calculateCalibratedValues() {
       calibratedValues[i] = 0;
     } else {
       long value = sensorValues[i];
-
       value = ((value - sensorMin[i]) * 1000L) / (sensorMax[i] - sensorMin[i]);
 
       if (value < 0) {
@@ -230,7 +253,7 @@ uint16_t readLineBlackManual() {
   for (uint8_t i = 0; i < SensorCount; i++) {
     uint16_t value = calibratedValues[i];
 
-    // Ignore weak background readings
+    // Ignore weak background readings so wood/floor noise does not pull the position.
     if (value < LINE_THRESHOLD) {
       value = 0;
     }
@@ -260,10 +283,10 @@ int countActiveSensors() {
 }
 
 // =====================
-// STRAIGHT LINE FOLLOWING
+// CURVED LINE FOLLOWING
 // =====================
 
-void followStraightLineP() {
+void followCurvedLinePD() {
   readQTR_RC();
   calculateCalibratedValues();
 
@@ -272,15 +295,19 @@ void followStraightLineP() {
   int activeCount = countActiveSensors();
 
   if (!lineDetected) {
-    stopMotors();
-    printDebug(position, 0, 0, 0, activeCount, false);
+    if (lastError < 0) {
+      searchLeft();
+    } else {
+      searchRight();
+    }
+
+    printDebug(position, lastError, 0, 0, activeCount, false);
     return;
   }
 
   int error = (int)position - LINE_CENTER;
-
-  // P control only
-  int correction = (int)(Kp * error);
+  int derivative = error - lastError;
+  int correction = (int)(Kp * error + Kd * derivative);
 
   int leftMagnitude = BASE_SPEED + correction;
   int rightMagnitude = BASE_SPEED - correction;
@@ -288,6 +315,8 @@ void followStraightLineP() {
   driveForwardMagnitudes(leftMagnitude, rightMagnitude);
 
   printDebug(position, error, leftMagnitude, rightMagnitude, activeCount, true);
+
+  lastError = error;
 }
 
 void printDebug(
@@ -323,39 +352,75 @@ void printDebug(
   Serial.println(rightMagnitude);
 }
 
+void runMotorTest() {
+  robotEnabled = false;
+
+  Serial.println("MOTOR TEST: running both motors forward for 2 seconds.");
+
+  driveForwardMagnitudes(220, 220);
+  delay(2000);
+
+  stopMotors();
+
+  Serial.println("MOTOR TEST: stopped.");
+}
+
 void handleSerialCommands() {
+  if (!keyboardControlEnabled) {
+    while (Serial.available()) {
+      Serial.read();
+    }
+    return;
+  }
+
   if (!Serial.available()) {
     return;
   }
 
   char command = Serial.read();
 
+  if (command == 'm' || command == 'M') {
+    runMotorTest();
+  }
+
   if (command == 'g' || command == 'G') {
     robotEnabled = true;
+    lastError = 0;
     lastLinePosition = LINE_CENTER;
-    Serial.println("GO: straight line following enabled.");
+    Serial.println("GO: curved line PD following enabled.");
   }
 
   if (command == 's' || command == 'S') {
-    robotEnabled = false;
-    stopMotors();
-    Serial.println("STOP: motors disabled.");
+    Serial.println("Keyboard stop disabled. Press the mechanical button to stop motors.");
+  }
+}
+
+void handleControlButton() {
+  bool reading = digitalRead(CONTROL_BUTTON_PIN);
+
+  if (reading != lastButtonReading) {
+    lastDebounceTime = millis();
   }
 
-  // Debug motor test.
-  // Type 'm' in Serial Monitor to prove this sketch can move the motors.
-  if (command == 'm' || command == 'M') {
-    robotEnabled = false;
+  if (millis() - lastDebounceTime > debounceDelay) {
+    if (reading != stableButtonState) {
+      stableButtonState = reading;
 
-    Serial.println("MOTOR TEST: running both motors forward for 2 seconds.");
+      if (stableButtonState == CONTROL_BUTTON_PRESSED) {
+        keyboardControlEnabled = !keyboardControlEnabled;
 
-    driveForwardMagnitudes(300, 300);
-    delay(2000);
-
-    stopMotors();
-
-    Serial.println("MOTOR TEST: stopped.");
+        if (keyboardControlEnabled) {
+          Serial.println("BUTTON: keyboard control enabled. Type 'm' or 'g'.");
+        } else {
+          robotEnabled = false;
+          stopMotors();
+          Serial.println("BUTTON: motors stopped. Keyboard control disabled.");
+        }
+      }
+    }
   }
+
+  lastButtonReading = reading;
 }
 
 // =====================
@@ -372,19 +437,24 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Manual QTR straight black line following test");
+  Serial.println("Manual QTR curved black line PD following test");
   Serial.println("Pins used: D22 to D30");
-  Serial.println("Upload, calibrate, then type:");
+  Serial.println("Mechanical control button: D8 to GND.");
+  Serial.println("Press button once to enable keyboard commands.");
+  Serial.println("Press button again to stop motors and disable keyboard commands.");
+  Serial.println("After enabling keyboard control, type:");
   Serial.println("'m' = motor test");
-  Serial.println("'g' = start straight line following");
-  Serial.println("'s' = stop");
+  Serial.println("'g' = start curved line following");
   Serial.println();
+
+  pinMode(CONTROL_BUTTON_PIN, INPUT_PULLUP);
 
   Wire1.begin();
   delay(500);
 
   mc.setBus(&Wire1);
   mc.reinitialize();
+  mc.disableCrc();
   mc.clearResetFlag();
   mc.setCommandTimeoutMilliseconds(1000);
 
@@ -398,14 +468,15 @@ void setup() {
   calibrateSensors();
 
   Serial.println("Ready.");
-  Serial.println("Type 'm' to test motors.");
-  Serial.println("Type 'g' to start straight line following.");
-  Serial.println("Type 's' to stop.");
+  Serial.println("Press the mechanical button to enable keyboard control.");
+  Serial.println("Then type 'm' to test motors or 'g' to start following.");
+  Serial.println("Press the mechanical button again to stop.");
   Serial.println();
 }
 
 void loop() {
   mc.resetCommandTimeout();
+  handleControlButton();
   handleSerialCommands();
 
   if (!robotEnabled) {
@@ -414,6 +485,6 @@ void loop() {
     return;
   }
 
-  followStraightLineP();
+  followCurvedLinePD();
   delay(5);
 }
