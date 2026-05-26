@@ -1,1 +1,369 @@
+#include <Wire.h>
+#include <Motoron.h>
+
+MotoronI2C motors(16);
+
+const int leftMotorChannel = 1;
+const int rightMotorChannel = 2;
+
+const int leftMotorDirection = 1;
+const int rightMotorDirection = -1;
+
+const int redLedPin = 52;
+const int greenLedPin = 48;
+
+
+const int bumperSwitchPin = 8;
+
+const unsigned long sensorBaudRate = 921600;
+
+uint8_t frontSensorFrame[16];
+uint8_t sensor2Frame[16];
+uint8_t sensor3Frame[16];
+uint8_t sensor4Frame[16];
+
+uint32_t frontDistanceMM = 0;
+uint32_t sensor2DistanceMM = 0;
+uint32_t sensor3DistanceMM = 0;
+uint32_t sensor4DistanceMM = 0;
+
+// Revival timing
+const unsigned long rescueTimeLimit = 60000;      // 60 seconds
+const unsigned long stableContactTime = 500;      // bumper must stay pressed for 0.5 sec
+
+// Speed values
+const int fastApproachSpeed = -350;
+const int mediumApproachSpeed = -220;
+const int gentleApproachSpeed = -300;
+
+// Distance thresholds
+const uint32_t farAwayDistanceMM = 800;
+const uint32_t startSlowingDistanceMM = 350;
+const uint32_t gentleContactDistanceMM = 140;
+
+// P controller gain
+const float approachGain = 0.45;
+
+// Revival states
+const int MOVING_TOWARDS_ROBOT = 0;
+const int CHECKING_CONTACT = 1;
+const int REVIVAL_COMPLETE = 2;
+const int RESCUE_TIMEOUT = 3;
+
+int currentRevivalStep = MOVING_TOWARDS_ROBOT;
+
+unsigned long rescueStartedAt = 0;
+unsigned long bumperPressedAt = 0;
+unsigned long lastStatusPrint = 0;
+
+bool timeoutMessagePrinted = false;
+
+void setup() {
+  Serial.begin(115200);
+
+  while (!Serial) {
+    delay(10);
+  }
+
+  Serial.println();
+  Serial.println("Robot revival test starting...");
+  Serial.println("Red light = revival not complete yet.");
+  Serial.println("Green light = bumper contact made, revival successful.");
+  Serial.println("Sensor 1 is being used as the front distance sensor.");
+  Serial.println();
+
+  Wire1.begin();
+
+  delay(500);
+
+  motors.setBus(&Wire1);
+  motors.reinitialize();
+  motors.clearResetFlag();
+
+  motors.setCommandTimeoutMilliseconds(1000);
+
+  motors.setMaxAcceleration(leftMotorChannel, 120);
+  motors.setMaxDeceleration(leftMotorChannel, 250);
+
+  motors.setMaxAcceleration(rightMotorChannel, 120);
+  motors.setMaxDeceleration(rightMotorChannel, 250);
+
+  pinMode(redLedPin, OUTPUT);
+  pinMode(greenLedPin, OUTPUT);
+
+  pinMode(bumperSwitchPin, INPUT_PULLUP);
+
+  Serial1.begin(sensorBaudRate);
+  Serial2.begin(sensorBaudRate);
+  Serial3.begin(sensorBaudRate);
+  Serial4.begin(sensorBaudRate);
+
+  delay(1000);
+
+  clearDistanceSensorBuffers();
+
+  stopMotors();
+  showRedLight();
+
+  rescueStartedAt = millis();
+}
+
+void loop() {
+  motors.resetCommandTimeout();
+
+  runRevivalMechanism();
+
+  printRobotStatus();
+}
+
+// Main revival logic
+void runRevivalMechanism() {
+  readDistanceSensors();
+
+  bool bumperIsPressed = digitalRead(bumperSwitchPin) == LOW;
+  unsigned long timeSinceStart = millis() - rescueStartedAt;
+
+  if (currentRevivalStep != REVIVAL_COMPLETE && timeSinceStart >= rescueTimeLimit) {
+    currentRevivalStep = RESCUE_TIMEOUT;
+  }
+
+  if (currentRevivalStep == MOVING_TOWARDS_ROBOT) {
+    showRedLight();
+
+    if (bumperIsPressed) {
+      stopMotors();
+
+      bumperPressedAt = millis();
+      currentRevivalStep = CHECKING_CONTACT;
+
+      Serial.println("Bumper touched the stranded robot. Checking contact...");
+    } else {
+      int speedToUse = chooseApproachSpeed(frontDistanceMM);
+      driveMotors(speedToUse, speedToUse);
+    }
+  }
+
+  else if (currentRevivalStep == CHECKING_CONTACT) {
+    stopMotors();
+    showRedLight();
+
+    if (!bumperIsPressed) {
+      currentRevivalStep = MOVING_TOWARDS_ROBOT;
+      Serial.println("Bumper contact was lost. Moving forward again...");
+    }
+
+    else if (millis() - bumperPressedAt >= stableContactTime) {
+      stopMotors();
+      showGreenLight();
+
+      currentRevivalStep = REVIVAL_COMPLETE;
+
+      Serial.println();
+      Serial.println("REVIVAL SUCCESSFUL");
+      Serial.println("Stable bumper contact made. LED changed from red to green.");
+      Serial.println();
+    }
+  }
+
+  else if (currentRevivalStep == REVIVAL_COMPLETE) {
+  stopMotors();
+
+  if (digitalRead(bumperSwitchPin) == LOW) {
+    showGreenLight();
+  } else {
+    showRedLight();
+  }
+}
+
+  else if (currentRevivalStep == RESCUE_TIMEOUT) {
+    stopMotors();
+    showRedLight();
+
+    if (!timeoutMessagePrinted) {
+      Serial.println();
+      Serial.println("The robot did not make contact within 60 seconds.");
+      Serial.println("Revival attempt stopped.");
+      Serial.println();
+
+      timeoutMessagePrinted = true;
+    }
+  }
+}
+
+// P controller / approach speed control
+int chooseApproachSpeed(uint32_t distanceMM) {
+  if (distanceMM == 0) {
+    return gentleApproachSpeed;
+  }
+
+  if (distanceMM > farAwayDistanceMM) {
+    return fastApproachSpeed;
+  }
+
+  if (distanceMM > startSlowingDistanceMM) {
+    return mediumApproachSpeed;
+  }
+
+  if (distanceMM > gentleContactDistanceMM) {
+    float distanceError = distanceMM - gentleContactDistanceMM;
+
+    int speedAmount = abs(gentleApproachSpeed) + (approachGain * distanceError);
+
+    if (speedAmount > abs(mediumApproachSpeed)) {
+      speedAmount = abs(mediumApproachSpeed);
+    }
+
+    if (speedAmount < abs(gentleApproachSpeed)) {
+      speedAmount = abs(gentleApproachSpeed);
+    }
+
+    return -speedAmount;
+  }
+
+  return gentleApproachSpeed;
+}
+
+// Distance sensor functions
+void readDistanceSensors() {
+  if (readOneDistanceSensor(Serial1, frontSensorFrame)) {
+    frontDistanceMM = getDistanceMM(frontSensorFrame);
+  }
+
+  if (readOneDistanceSensor(Serial2, sensor2Frame)) {
+    sensor2DistanceMM = getDistanceMM(sensor2Frame);
+  }
+
+  if (readOneDistanceSensor(Serial3, sensor3Frame)) {
+    sensor3DistanceMM = getDistanceMM(sensor3Frame);
+  }
+
+  if (readOneDistanceSensor(Serial4, sensor4Frame)) {
+    sensor4DistanceMM = getDistanceMM(sensor4Frame);
+  }
+}
+
+bool readOneDistanceSensor(HardwareSerial &port, uint8_t *frame) {
+  while (port.available()) {
+    uint8_t firstByte = port.read();
+
+    if (firstByte != 0x57) {
+      continue;
+    }
+
+    frame[0] = firstByte;
+
+    unsigned long startTime = millis();
+    int index = 1;
+
+    while (index < 16 && millis() - startTime < 50) {
+      if (port.available()) {
+        frame[index] = port.read();
+        index++;
+      }
+    }
+
+    if (index < 16) {
+      return false;
+    }
+
+    if (frame[1] != 0x00 || frame[2] != 0xFF) {
+      return false;
+    }
+
+    uint8_t checksum = 0;
+
+    for (int i = 0; i < 15; i++) {
+      checksum += frame[i];
+    }
+
+    if (checksum != frame[15]) {
+      return false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+uint32_t getDistanceMM(uint8_t *frame) {
+  return ((uint32_t)frame[8]) |
+         ((uint32_t)frame[9] << 8) |
+         ((uint32_t)frame[10] << 16);
+}
+
+void clearDistanceSensorBuffers() {
+  while (Serial1.available()) {
+    Serial1.read();
+  }
+
+  while (Serial2.available()) {
+    Serial2.read();
+  }
+
+  while (Serial3.available()) {
+    Serial3.read();
+  }
+
+  while (Serial4.available()) {
+    Serial4.read();
+  }
+}
+
+// Motor functions
+void driveMotors(int leftSpeed, int rightSpeed) {
+  motors.setSpeed(leftMotorChannel, leftMotorDirection * leftSpeed);
+  motors.setSpeed(rightMotorChannel, rightMotorDirection * rightSpeed);
+}
+
+void stopMotors() {
+  motors.setSpeed(leftMotorChannel, 0);
+  motors.setSpeed(rightMotorChannel, 0);
+}
+
+// LED functions
+void showRedLight() {
+  digitalWrite(redLedPin, HIGH);
+  digitalWrite(greenLedPin, LOW);
+}
+
+void showGreenLight() {
+  digitalWrite(redLedPin, LOW);
+  digitalWrite(greenLedPin, HIGH);
+}
+
+// Serial monitor output
+void printRobotStatus() {
+  if (millis() - lastStatusPrint >= 1000) {
+    Serial.print("Robot status: ");
+
+    if (currentRevivalStep == MOVING_TOWARDS_ROBOT) {
+      Serial.print("approaching stranded robot");
+    } else if (currentRevivalStep == CHECKING_CONTACT) {
+      Serial.print("checking bumper contact");
+    } else if (currentRevivalStep == REVIVAL_COMPLETE) {
+      Serial.print("revival complete");
+    } else if (currentRevivalStep == RESCUE_TIMEOUT) {
+      Serial.print("stopped - time ran out");
+    }
+
+    Serial.print(" | Front distance: ");
+    Serial.print(frontDistanceMM);
+    Serial.print(" mm");
+
+    Serial.print(" | Bumper: ");
+
+    if (digitalRead(bumperSwitchPin) == LOW) {
+      Serial.print("pressed");
+    } else {
+      Serial.print("not pressed");
+    }
+
+    Serial.print(" | Time used: ");
+    Serial.print((millis() - rescueStartedAt) / 1000);
+    Serial.println(" sec");
+
+    lastStatusPrint = millis();
+  }
+}
 
