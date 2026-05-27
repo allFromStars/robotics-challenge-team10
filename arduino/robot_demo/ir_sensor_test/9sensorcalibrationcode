@@ -1,0 +1,120 @@
+const uint8_t SensorCount = 9;
+// Configured for digital pins 22 through 30
+const uint8_t sensorPins[SensorCount] = {22, 23, 24, 25, 26, 27, 28, 29, 30};
+uint16_t sensorValues[SensorCount];
+const uint16_t timeout = 2500; 
+
+void readQTR_RC() {
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    pinMode(sensorPins[i], OUTPUT);
+    digitalWrite(sensorPins[i], HIGH);
+  }
+  delayMicroseconds(10);
+
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    pinMode(sensorPins[i], INPUT);
+    sensorValues[i] = timeout;
+  }
+
+  unsigned long startTime = micros();
+  bool allDone = false;
+
+  while (!allDone && (micros() - startTime < timeout)) {
+    allDone = true;
+    for (uint8_t i = 0; i < SensorCount; i++) {
+      if (sensorValues[i] == timeout) {
+        if (digitalRead(sensorPins[i]) == LOW) {
+          sensorValues[i] = micros() - startTime;
+        } else {
+          allDone = false;
+        }
+      }
+    }
+  }
+}
+
+// Counts down, then tracks and averages all 9 sensors over a full 10 seconds
+unsigned long captureSurface(String surfaceName) {
+  Serial.println("=========================================");
+  Serial.print("NEXT SURFACE: ");
+  Serial.println(surfaceName);
+  Serial.println("=========================================");
+  
+  // 7-second countdown to align and settle the sensor array
+  for (int i = 7; i > 0; i--) {
+    Serial.print("Align sensor array now... ");
+    Serial.print(i);
+    Serial.println(" seconds left");
+    delay(1000);
+  }
+  
+  Serial.println("\n--> STARTING 10-SECOND LOGGING (Hold perfectly still)...");
+  
+  unsigned long totalSums[SensorCount] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  unsigned long sampleCount = 0;
+  unsigned long readStartTime = millis();
+  
+  // Take continuous readings for 10 seconds (10000ms)
+  while (millis() - readStartTime < 10000) {
+    readQTR_RC();
+    
+    // Sum up the values for every individual sensor
+    for (uint8_t i = 0; i < SensorCount; i++) {
+      totalSums[i] += sensorValues[i];
+    }
+    sampleCount++;
+    delay(30); 
+  }
+  
+  // Calculate the collective average across all sensors to represent the surface profile
+  unsigned long arraySum = 0;
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    arraySum += (totalSums[i] / sampleCount);
+  }
+  unsigned long overallAverage = arraySum / SensorCount;
+  
+  Serial.print("DONE! 10-Second Array Average for ");
+  Serial.print(surfaceName);
+  Serial.print(": ");
+  Serial.println(overallAverage);
+  Serial.println("\n\n");
+  
+  return overallAverage;
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) { delay(10); }
+  delay(1000);
+  
+  Serial.println("--- 9-Sensor Precision Calibration Sketch ---");
+  Serial.println("Keep your sensor array flat at a constant operational height.");
+  Serial.println();
+
+  // Run the sequence in your exact testing order
+  unsigned long woodVal  = captureSurface("0: WOOD SURFACE");
+  delay(4000); // 4-second break to prepare for the next surface
+  
+  unsigned long tapeVal  = captureSurface("1: BLACK TAPE");
+  delay(4000);
+  
+  unsigned long seedVal  = captureSurface("3: SEED IN HOLE");
+  delay(4000);
+  
+  unsigned long emptyVal = captureSurface("2: EMPTY HOLE");
+
+  // Print final recorded dataset
+  Serial.println("=========================================");
+  Serial.println("    10-SECOND PRECISION SUMMARY TABLE    ");
+  Serial.println("=========================================");
+  Serial.print("Wood (0): "); Serial.println(woodVal);
+  Serial.print("Tape (1): "); Serial.println(tapeVal);
+  Serial.print("Seed (3): "); Serial.println(seedVal);
+  Serial.print("Empty(2): "); Serial.println(emptyVal);
+  Serial.println("=========================================");
+  Serial.println("Take a screenshot or copy these final values!");
+}
+
+void loop() {
+  // Static script, runs once on startup
+}

@@ -19,8 +19,9 @@ float gyroBiasZ = 0;
 
 float turnKp = 15.5;
 float turnKd = 1.8;   
+float turnKi = 1.8;
 
-const int MOTOR_MAX_LIMIT = 300;
+const int MOTOR_MAX_LIMIT = 300;  
 const int MOTOR_MIN_LIMIT = 100;  // Minimum power required to overcome floor
 
 void driveMotors(int leftLogicalSpeed, int rightLogicalSpeed) {
