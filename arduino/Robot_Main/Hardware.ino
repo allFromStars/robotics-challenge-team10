@@ -1,4 +1,4 @@
-// Semicolon and assignment bugs inside initWire() fixed
+
 void initWire() {
   Serial.println("Initialising wire...");
   Wire.begin();
