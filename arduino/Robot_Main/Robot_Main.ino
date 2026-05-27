@@ -5,18 +5,20 @@
 
 enum RobotState {
   STATE_STANDBY_BASE,       // Parked at base waiting for start cue
-  STATE_LINE_FOLLOWING_B,     // Tracking line in base
+  STATE_BASE_NAVIGATION,
+
+  STATE_RAMP,
 
   STATE_PLAN, 
 
-  STATE_TURN_R,                // Go back to plan
-  STATE_TURN_L,                // Go back to plan
+  STATE_TURN,         // Go back to plan
+  STATE_ALIGNCOMPASS,
 
   STATE_NAVIGATING_LINES,     // Tracking line in arena
   STATE_NAVIGATING_OPEN,      // Navigating in open field
 
   STATE_ALIGN_SEED,         // After wanted RFID detected, creep forward and use reflectance to align itself slowly
-  STATE_PLANTING_CYCLE,     // Paused over an RFID seed hole, activating the hopper mechanism
+  STATE_PLANTING,           // Paused over an RFID seed hole, activating the hopper mechanism
 
   STATE_RESCUE_MODE,        // received signal to save robot that is right infront, tap robot
   STATE_STRANDED_ALIVE,     // Stop wheels activate LED, do stranded protocol
@@ -26,10 +28,12 @@ enum RobotState {
 
   STATE_EXIT_ARENA,
 
-  STATE_AIRLOCK_B
+  STATE_AIRLOCK_B,
+
+  STATE_DEBUG,
 };
 
-RobotState currentState = STATE_STANDBY_BASE;
+RobotState currentState = STATE_DEBUG;
 
 
 
@@ -82,6 +86,18 @@ struct SENSORS {
   uint32_t rfidInfo;
 }; 
 SENSORS sensors;
+
+struct Coordinate {
+  int x;
+  int y;
+};
+
+struct INFO {
+  int seedsLeft;
+  Coordinate currentPos;  // Holds your active x and y
+  Coordinate destination; // Holds your target x and y
+};
+INFO robotInfo;
 
 
 bool initSensors();
@@ -147,8 +163,83 @@ void setup() {
   Serial.println(tofRight1Online ? "[OK] TOF Right 1 Sensor" : "[FAILED] TOF Right 1 Sensor");
   Serial.println(tofRight2Online ? "[OK] TOF Right 2 Sensor" : "[FAILED] TOF Right 2 Sensor");
   Serial.println("=========================================\n");
+
+  //robot info setup
+  robotInfo.seedsLeft = 5;      // Start with a full hopper
+  
+
+  robotInfo.currentPos.x = -1;  //at base
+  robotInfo.currentPos.y = -1;
+  
+
+  robotInfo.destination.x = 5;
+  robotInfo.destination.y = 5;
+
+
+
 }
 
 void loop() {
-  DebugSensors();
+  //DebugSensors();
+
+  refreshAllSensors();
+
+
+  switch (currentState) {
+
+    case STATE_STANDBY_BASE:
+      stopMotors();
+      break;
+
+    case STATE_BASE_NAVIGATION:
+      break;
+
+    case STATE_RAMP:
+      break;
+
+    case STATE_PLAN:
+      break;
+
+    case STATE_TURN:
+      break;
+
+    case STATE_ALIGN_SEED:
+      break;
+
+    case STATE_PLANTING:
+      break;
+
+    case STATE_STRANDED_ALIVE:
+      stopMotors();
+      break;
+
+    case STATE_REVIVED_RETURN:
+      break;
+
+    case STATE_EMERGENCY_STOP:
+      stopMotors();
+      break;
+    
+    case STATE_EXIT_ARENA:
+      break;
+
+    case STATE_AIRLOCK_B:
+      break;
+
+    case STATE_DEBUG:
+      DebugSensors();
+      break;
+
+    default:
+      stopMotors();
+      break;
+  }
+
+  // run serial 4 times per sec
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint >= 250) {
+    lastPrint = millis();
+
+  }
 }
+
