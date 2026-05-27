@@ -1,0 +1,365 @@
+#include <Wire.h>
+#include <Motoron.h>
+
+// Motoron I2C address
+MotoronI2C mc(16);
+
+// Motor channels
+const int LEFT_MOTOR_CHANNEL = 1;
+const int RIGHT_MOTOR_CHANNEL = 2;
+
+// Motor direction correction
+const int LEFT_DIR = 1;
+const int RIGHT_DIR = -1;
+
+// Encoder pins
+const int leftEncoderPinA = D2;
+const int leftEncoderPinB = D3;
+
+const int rightEncoderPinA = D4;
+const int rightEncoderPinB = D5;
+
+// Encoder positions
+volatile long leftEncoderPos = 0;
+volatile long rightEncoderPos = 0;
+
+// LED
+const int redLedPin = D9;
+
+// Ramp task timing
+const unsigned long RAMP_TIME_LIMIT_MS = 45000;
+
+// Distance to travel down the ramp
+// Tune this until the robot stops after completing the whole ramp
+const long RAMP_DESCENT_DISTANCE_COUNTS = 2500;
+
+// PID update timing
+const unsigned long PID_SAMPLE_TIME_MS = 50;
+
+// Target wheel speed while descending
+// This is in encoder counts per second
+const float TARGET_DESCENT_SPEED_CPS = 300.0;
+
+// Base motor power for descending
+// Negative speed means forward on our robot
+const int DESCENT_BASE_SPEED = -180;
+
+// Speed limits
+const int MIN_DESCENT_SPEED = 80;
+const int MAX_DESCENT_SPEED = 300;
+
+// PID values
+float Kp = 0.45;
+float Ki = 0.02;
+float Kd = 0.08;
+
+// PID variables for left wheel
+float leftIntegral = 0;
+float leftLastError = 0;
+
+// PID variables for right wheel
+float rightIntegral = 0;
+float rightLastError = 0;
+
+// Encoder tracking for speed calculation
+long lastLeftCount = 0;
+long lastRightCount = 0;
+
+unsigned long lastPidTime = 0;
+unsigned long rampStartTime = 0;
+unsigned long lastPrintTime = 0;
+
+int currentLeftSpeed = 0;
+int currentRightSpeed = 0;
+
+bool rampStarted = false;
+bool rampFinished = false;
+bool rampFailed = false;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("SYSTEM STARTING - RAMP DESCENT PID TEST");
+
+  Wire1.begin();
+  mc.setBus(&Wire1);
+
+  mc.reinitialize();
+  mc.clearResetFlag();
+
+  mc.setCommandTimeoutMilliseconds(1000);
+
+  // Keep acceleration smooth so the robot does not jerk on the ramp
+  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, 120);
+  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, 350);
+
+  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, 120);
+  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, 350);
+
+  pinMode(leftEncoderPinA, INPUT_PULLUP);
+  pinMode(leftEncoderPinB, INPUT_PULLUP);
+
+  pinMode(rightEncoderPinA, INPUT_PULLUP);
+  pinMode(rightEncoderPinB, INPUT_PULLUP);
+
+  attachInterrupt(
+    digitalPinToInterrupt(leftEncoderPinA),
+    readLeftEncoder,
+    CHANGE
+  );
+
+  attachInterrupt(
+    digitalPinToInterrupt(rightEncoderPinA),
+    readRightEncoder,
+    CHANGE
+  );
+
+  pinMode(redLedPin, OUTPUT);
+
+  stopMotors();
+
+  delay(1000);
+
+  startRampDescent();
+}
+
+void loop() {
+  mc.resetCommandTimeout();
+
+  RampDescent();
+
+  printStatus();
+}
+
+void startRampDescent() {
+  resetEncoders();
+  resetPid();
+
+  rampStartTime = millis();
+  lastPidTime = millis();
+
+  rampStarted = true;
+  rampFinished = false;
+  rampFailed = false;
+
+  digitalWrite(redLedPin, LOW);
+
+  Serial.println("Ramp descent started.");
+}
+
+void RampDescent() {
+  if (!rampStarted || rampFinished || rampFailed) {
+    stopMotors();
+    return;
+  }
+
+  unsigned long timeUsed = millis() - rampStartTime;
+
+  long leftCounts;
+  long rightCounts;
+  getEncoderCounts(leftCounts, rightCounts);
+
+  long averageCounts = (leftCounts + rightCounts) / 2;
+
+  if (averageCounts >= RAMP_DESCENT_DISTANCE_COUNTS) {
+    stopMotors();
+    rampFinished = true;
+
+    Serial.println();
+    Serial.println("RAMP DESCENT COMPLETE");
+    Serial.println("Robot completed the ramp distance.");
+    Serial.println();
+
+    return;
+  }
+
+  if (timeUsed >= RAMP_TIME_LIMIT_MS) {
+    stopMotors();
+    rampFailed = true;
+    digitalWrite(redLedPin, HIGH);
+
+    Serial.println();
+    Serial.println("RAMP DESCENT FAILED");
+    Serial.println("Robot did not complete the ramp within 45 seconds.");
+    Serial.println();
+
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (now - lastPidTime >= PID_SAMPLE_TIME_MS) {
+    float dt = (now - lastPidTime) / 1000.0;
+
+    long leftDelta = leftCounts - lastLeftCount;
+    long rightDelta = rightCounts - lastRightCount;
+
+    float leftSpeedCps = leftDelta / dt;
+    float rightSpeedCps = rightDelta / dt;
+
+    int leftCommand = calculatePidSpeed(
+      TARGET_DESCENT_SPEED_CPS,
+      leftSpeedCps,
+      leftIntegral,
+      leftLastError,
+      dt
+    );
+
+    int rightCommand = calculatePidSpeed(
+      TARGET_DESCENT_SPEED_CPS,
+      rightSpeedCps,
+      rightIntegral,
+      rightLastError,
+      dt
+    );
+
+    currentLeftSpeed = leftCommand;
+    currentRightSpeed = rightCommand;
+
+    driveMotors(currentLeftSpeed, currentRightSpeed);
+
+    lastLeftCount = leftCounts;
+    lastRightCount = rightCounts;
+    lastPidTime = now;
+  }
+}
+
+int calculatePidSpeed(float targetSpeed, float measuredSpeed, float &integral, float &lastError, float dt) {
+  float error = targetSpeed - measuredSpeed;
+
+  integral += error * dt;
+
+  // Prevent the integral term from becoming too large
+  if (integral > 500) {
+    integral = 500;
+  }
+
+  if (integral < -500) {
+    integral = -500;
+  }
+
+  float derivative = (error - lastError) / dt;
+
+  float pidOutput = (Kp * error) + (Ki * integral) + (Kd * derivative);
+
+  lastError = error;
+
+  int speedAmount = abs(DESCENT_BASE_SPEED) + pidOutput;
+
+  if (speedAmount > MAX_DESCENT_SPEED) {
+    speedAmount = MAX_DESCENT_SPEED;
+  }
+
+  if (speedAmount < MIN_DESCENT_SPEED) {
+    speedAmount = MIN_DESCENT_SPEED;
+  }
+
+  // Negative speed means forward on this robot
+  return -speedAmount;
+}
+
+void driveMotors(int leftSpeed, int rightSpeed) {
+  mc.setSpeed(
+    LEFT_MOTOR_CHANNEL,
+    LEFT_DIR * leftSpeed
+  );
+
+  mc.setSpeed(
+    RIGHT_MOTOR_CHANNEL,
+    RIGHT_DIR * rightSpeed
+  );
+}
+
+void stopMotors() {
+  mc.setSpeed(LEFT_MOTOR_CHANNEL, 0);
+  mc.setSpeed(RIGHT_MOTOR_CHANNEL, 0);
+
+  currentLeftSpeed = 0;
+  currentRightSpeed = 0;
+}
+
+void resetEncoders() {
+  noInterrupts();
+
+  leftEncoderPos = 0;
+  rightEncoderPos = 0;
+
+  interrupts();
+
+  lastLeftCount = 0;
+  lastRightCount = 0;
+}
+
+void resetPid() {
+  leftIntegral = 0;
+  rightIntegral = 0;
+
+  leftLastError = 0;
+  rightLastError = 0;
+}
+
+void getEncoderCounts(long &leftCounts, long &rightCounts) {
+  noInterrupts();
+
+  long leftRaw = leftEncoderPos;
+  long rightRaw = rightEncoderPos;
+
+  interrupts();
+
+  leftCounts = abs(leftRaw);
+  rightCounts = abs(rightRaw);
+}
+
+void printStatus() {
+  if (millis() - lastPrintTime >= 500) {
+    long leftCounts;
+    long rightCounts;
+
+    getEncoderCounts(leftCounts, rightCounts);
+
+    Serial.print("Ramp descent");
+
+    if (rampFinished) {
+      Serial.print(" COMPLETE");
+    } else if (rampFailed) {
+      Serial.print(" FAILED");
+    } else {
+      Serial.print(" RUNNING");
+    }
+
+    Serial.print(" | Left counts: ");
+    Serial.print(leftCounts);
+
+    Serial.print(" | Right counts: ");
+    Serial.print(rightCounts);
+
+    Serial.print(" | Left speed command: ");
+    Serial.print(currentLeftSpeed);
+
+    Serial.print(" | Right speed command: ");
+    Serial.print(currentRightSpeed);
+
+    Serial.print(" | Time: ");
+    Serial.print((millis() - rampStartTime) / 1000);
+    Serial.println(" sec");
+
+    lastPrintTime = millis();
+  }
+}
+
+void readLeftEncoder() {
+  if (digitalRead(leftEncoderPinA) ==
+      digitalRead(leftEncoderPinB)) {
+    leftEncoderPos--;
+  } else {
+    leftEncoderPos++;
+  }
+}
+
+void readRightEncoder() {
+  if (digitalRead(rightEncoderPinA) ==
+      digitalRead(rightEncoderPinB)) {
+    rightEncoderPos--;
+  } else {
+    rightEncoderPos++;
+  }
+}
