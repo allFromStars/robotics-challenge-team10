@@ -57,7 +57,11 @@ void refreshAllSensors() {
   readIR(); // IR stays active (uses native microcontroller pins)
   
   if (rfidOnline)  CheckRFID();
-  if (imuOnline)   readIMU();
+  if (imuOnline) {
+    readIMU(); 
+    sensors.compassNorth = getHeadingDegrees();
+  }   
+  
 }
 
 void readIMU() {
@@ -208,6 +212,34 @@ void CheckRFID() {
   }
 }
 
+float getHeadingDegrees() {
+  if (myICM.dataReady()) {
+    myICM.getAGMT();
+  }
+
+  float magX = myICM.magX();
+  float magY = myICM.magY();
+
+
+  float headingRadians = atan2(magY, magX);
+
+
+  float headingDegrees = headingRadians * (180.0 / M_PI);
+
+  float declinationDegrees = 4.0; 
+  headingDegrees += declinationDegrees;
+
+
+  if (headingDegrees < 0) {
+    headingDegrees += 360.0;
+  }
+  if (headingDegrees >= 360.0) {
+    headingDegrees -= 360.0;
+  }
+
+  return headingDegrees;
+}
+
 void DebugSensors() {
   refreshAllSensors();
 
@@ -217,6 +249,7 @@ void DebugSensors() {
     
 
     Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
+    Serial.print(" | COMPASS NORTH: "); Serial.print(sensors.compassNorth, 1);
     Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
     Serial.print(", L="); Serial.print(sensors.tof_left);
     Serial.print(", R1="); Serial.print(sensors.tof_right1);

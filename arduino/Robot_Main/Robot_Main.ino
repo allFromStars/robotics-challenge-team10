@@ -9,8 +9,8 @@ enum RobotState {
 
   STATE_PLAN, 
 
-  STATE_TURN_R                // Go back to plan
-  STATE_TURN_L                // Go back to plan
+  STATE_TURN_R,                // Go back to plan
+  STATE_TURN_L,                // Go back to plan
 
   STATE_NAVIGATING_LINES,     // Tracking line in arena
   STATE_NAVIGATING_OPEN,      // Navigating in open field
@@ -22,7 +22,7 @@ enum RobotState {
   STATE_STRANDED_ALIVE,     // Stop wheels activate LED, do stranded protocol
 
   STATE_REVIVED_RETURN,     // Revived - do revival protocol
-  STATE_EMERGENCY_STOP      // Hardware kill switch fallback state
+  STATE_EMERGENCY_STOP,      // Hardware kill switch fallback state
 
   STATE_EXIT_ARENA,
 
@@ -73,6 +73,7 @@ unsigned long lastTimeMicros = 0;
 // Shared Global Storage Struct
 struct SENSORS {
   float yaw;
+  float compassNorth;
   uint32_t tof_front;
   uint32_t tof_left;
   uint32_t tof_right1;
@@ -149,5 +150,5 @@ void setup() {
 }
 
 void loop() {
-
+  DebugSensors();
 }
