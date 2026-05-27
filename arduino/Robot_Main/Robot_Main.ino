@@ -6,16 +6,27 @@
 enum RobotState {
   STATE_STANDBY_BASE,       // Parked at base waiting for start cue
   STATE_LINE_FOLLOWING_B,     // Tracking line in base
+
   STATE_PLAN, 
+
+  STATE_TURN_R                // Go back to plan
+  STATE_TURN_L                // Go back to plan
+
   STATE_NAVIGATING_LINES,     // Tracking line in arena
   STATE_NAVIGATING_OPEN,      // Navigating in open field
-  STATE_WALL_FOLLOWING,     // Wall following in Arena
+
   STATE_ALIGN_SEED,         // After wanted RFID detected, creep forward and use reflectance to align itself slowly
   STATE_PLANTING_CYCLE,     // Paused over an RFID seed hole, activating the hopper mechanism
+
   STATE_RESCUE_MODE,        // received signal to save robot that is right infront, tap robot
   STATE_STRANDED_ALIVE,     // Stop wheels activate LED, do stranded protocol
+
   STATE_REVIVED_RETURN,     // Revived - do revival protocol
   STATE_EMERGENCY_STOP      // Hardware kill switch fallback state
+
+  STATE_EXIT_ARENA,
+
+  STATE_AIRLOCK_B
 };
 
 RobotState currentState = STATE_STANDBY_BASE;
@@ -138,39 +149,5 @@ void setup() {
 }
 
 void loop() {
-  refreshAllSensors();
 
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 250) {
-    lastPrint = millis();
-    
-
-    Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
-    Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
-    Serial.print(", L="); Serial.print(sensors.tof_left);
-    Serial.print(", R1="); Serial.print(sensors.tof_right1);
-    Serial.print(", R2="); Serial.print(sensors.tof_right2);
-    Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
-    Serial.print(" | "); 
-
-
-    static uint32_t lastPrintedID = 0;
-
-    if (sensors.rfidInfo != 0) {
-      if (sensors.rfidInfo != lastPrintedID) {
-
-        Serial.print("Card detected: 0x");
-        Serial.println(sensors.rfidInfo, HEX);
-        lastPrintedID = sensors.rfidInfo;
-      } else {
-
-        Serial.println("Card detected: same card");
-      }
-    } 
-    else {
-
-      Serial.println("no card detected");
-      lastPrintedID = 0; 
-    }
-  }
 }

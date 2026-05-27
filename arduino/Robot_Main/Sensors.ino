@@ -207,3 +207,41 @@ void CheckRFID() {
     }
   }
 }
+
+void DebugSensors() {
+  refreshAllSensors();
+
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint >= 250) {
+    lastPrint = millis();
+    
+
+    Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
+    Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
+    Serial.print(", L="); Serial.print(sensors.tof_left);
+    Serial.print(", R1="); Serial.print(sensors.tof_right1);
+    Serial.print(", R2="); Serial.print(sensors.tof_right2);
+    Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
+    Serial.print(" | "); 
+
+
+    static uint32_t lastPrintedID = 0;
+
+    if (sensors.rfidInfo != 0) {
+      if (sensors.rfidInfo != lastPrintedID) {
+
+        Serial.print("Card detected: 0x");
+        Serial.println(sensors.rfidInfo, HEX);
+        lastPrintedID = sensors.rfidInfo;
+      } else {
+
+        Serial.println("Card detected: same card");
+      }
+    } 
+    else {
+
+      Serial.println("no card detected");
+      lastPrintedID = 0; 
+    }
+  }
+}
