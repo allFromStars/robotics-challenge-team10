@@ -6,6 +6,7 @@
 enum RobotState {
   STATE_STANDBY_BASE,       // Parked at base waiting for start cue
   STATE_LINE_FOLLOWING_B,     // Tracking line in base
+  STATE_PLAN, 
   STATE_NAVIGATING_LINES,     // Tracking line in arena
   STATE_NAVIGATING_OPEN,      // Navigating in open field
   STATE_WALL_FOLLOWING,     // Wall following in Arena
