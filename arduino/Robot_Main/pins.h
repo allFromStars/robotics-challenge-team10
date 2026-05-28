@@ -11,10 +11,6 @@ const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
 
 // Motor direction correction.
-// Keep these consistent with the tested Robot_Main / robot_demo code.
-const int LEFT_DIR = 1;
-const int RIGHT_DIR = -1;
-const int FORWARD_SIGN = -1;
 
 // ============================================================
 // Encoder pins
@@ -32,11 +28,9 @@ const int RIGHT_ENCODER_PIN_B = D5;
 
 const uint8_t IR_COUNT = 9;
 
-const uint8_t IR_PINS[IR_COUNT] = {
+const uint8_t irPins[IR_COUNT] = {
   22, 23, 24, 25, 26, 27, 28, 29, 30
 };
-
-const uint16_t IR_TIMEOUT_MICROS = 2500;
 
 // ============================================================
 // RFID reader
@@ -66,8 +60,6 @@ const uint8_t IMU_ADDR = 0x68;
 //
 // These are not pin constants because HardwareSerial objects are used
 // directly in the code.
-
-const unsigned long TOF_SENSOR_BAUD = 921600;
 
 // ============================================================
 // Button / LED pins

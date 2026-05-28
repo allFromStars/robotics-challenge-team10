@@ -16,12 +16,13 @@ bool initMotors() {
   mc.setBus(&Wire1);
   mc.reinitialize();
   mc.clearResetFlag();
-  mc.setCommandTimeoutMilliseconds(1000);
+  mc.setCommandTimeoutMilliseconds(MOTOR_COMMAND_TIMEOUT_MS);
   
-  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, maxAccel);
-  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, maxDecel);
-  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, maxAccel);
-  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, maxDecel);
+  mc.setMaxAcceleration(LEFT_MOTOR_CHANNEL, MAX_ACCEL);
+  mc.setMaxDeceleration(LEFT_MOTOR_CHANNEL, MAX_DECEL);
+  mc.setMaxAcceleration(RIGHT_MOTOR_CHANNEL, MAX_ACCEL);
+  mc.setMaxDeceleration(RIGHT_MOTOR_CHANNEL, MAX_DECEL);
+  
   
   stopMotors();
   return true;

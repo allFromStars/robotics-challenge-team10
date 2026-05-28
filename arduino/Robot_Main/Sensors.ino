@@ -75,7 +75,7 @@ void readIMU() {
     if (dt <= 0.0) dt = 0.001; 
 
     float gyroZ = myICM.gyrZ() - gyroBiasZ;
-    if (abs(gyroZ) > 0.1) { 
+    if (abs(gyroZ) > GYRO_DEADBAND_DPS) { 
       sensors.yaw += gyroZ * dt;
     }
   }
@@ -115,19 +115,19 @@ bool processTofStream(HardwareSerial &port, uint8_t *frame) {
 void readAllTOF() {
   if (tofFrontOnline && processTofStream(Serial1, rawFrame1)) {
     uint32_t raw = parseTofFrameBytes(rawFrame1);
-    sensors.tof_front = (int32_t)runTofMovingAverage(raw, tofHistory1, tofIdx1) - offset1;
+    sensors.tof_front = (int32_t)runTofMovingAverage(raw, tofHistory1, tofIdx1) - TOF_FRONT_OFFSET;
   }
   if (tofLeftOnline && processTofStream(Serial2, rawFrame2)) {
     uint32_t raw = parseTofFrameBytes(rawFrame2);
-    sensors.tof_left = (int32_t)runTofMovingAverage(raw, tofHistory2, tofIdx2) - offset2;
+    sensors.tof_left = (int32_t)runTofMovingAverage(raw, tofHistory2, tofIdx2) - TOF_LEFT_OFFSET;
   }
   if (tofRight1Online && processTofStream(Serial3, rawFrame3)) {
     uint32_t raw = parseTofFrameBytes(rawFrame3);
-    sensors.tof_right1 = (int32_t)runTofMovingAverage(raw, tofHistory3, tofIdx3) - offset3;
+    sensors.tof_right1 = (int32_t)runTofMovingAverage(raw, tofHistory3, tofIdx3) - TOF_RIGHT1_OFFSET;
   }
   if (tofRight2Online && processTofStream(Serial4, rawFrame4)) {
     uint32_t raw = parseTofFrameBytes(rawFrame4);
-    sensors.tof_right2 = (int32_t)runTofMovingAverage(raw, tofHistory4, tofIdx4) - offset4;
+    sensors.tof_right2 = (int32_t)runTofMovingAverage(raw, tofHistory4, tofIdx4) - TOF_RIGHT2_OFFSET;
   }
 }
 
@@ -226,7 +226,7 @@ float getHeadingDegrees() {
 
   float headingDegrees = headingRadians * (180.0 / M_PI);
 
-  float declinationDegrees = 4.0; 
+  float declinationDegrees = MAG_DECLINATION_DEG; 
   headingDegrees += declinationDegrees;
 
 
@@ -244,7 +244,7 @@ void DebugSensors() {
   refreshAllSensors();
 
   static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 250) {
+  if (millis() - lastPrint >= DEBUG_PRINT_INTERVAL_MS) {
     lastPrint = millis();
     
 
