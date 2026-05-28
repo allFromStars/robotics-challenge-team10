@@ -26,49 +26,48 @@ volatile long rightACount = 0;
 volatile long rightBCount = 0;
 
 // ======================================================
-// TUNE THESE ONLY
+// TUNE THESE
 // ======================================================
 
-// Change to -1 if the robot moves backwards
+// Change to -1 if robot moves backwards
 const int driveDirection = 1;
 
-// Increase this if you want it to travel further
-const long targetDistanceCounts = 2500;
+// Main speed
+int motorPower = 350;
 
-// Main motor power
-const int baseMotorPower = 350;
-
-// Change to -1 if the correction makes it curve worse
-const int steeringPolarity = 1;
-
-// ======================================================
-// STRAIGHT LINE SETTINGS
-// ======================================================
-
-const int maxMotorPower = 500;
-
-// How much encoder difference is allowed before correcting
-const int allowedDifference = 20;
-
-// Higher = stronger straight-line correction
-const int steeringGain = 3;
+// Higher = stronger correction if one side is faster
+const int speedBalanceGain = 2;
 
 // Limit correction so it does not oversteer
-const int maxSteeringCorrection = 180;
+const int maxCorrection = 120;
 
+// ======================================================
+// FIXED SETTINGS
+// ======================================================
+
+const unsigned long updateTime = 100; // ms
+
+const int minPower = 0;
+const int maxPower = 500;
+
+unsigned long lastUpdateTime = 0;
 unsigned long lastPrintTime = 0;
+
+long lastLeftAvg = 0;
+long lastRightAvg = 0;
+
+float leftSpeed = 0;
+float rightSpeed = 0;
 
 int leftMotorPower = 0;
 int rightMotorPower = 0;
-int steeringCorrection = 0;
-
-bool finished = false;
+int correction = 0;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("Straight line encoder control starting...");
+  Serial.println("Straight line encoder speed control starting...");
 
   Wire1.begin();
 
@@ -98,67 +97,57 @@ void setup() {
 
   delay(2000);
 
+  lastUpdateTime = millis();
+
   Serial.println("Robot moving straight...");
 }
 
 void loop() {
   motorController.resetCommandTimeout();
 
-  if (finished) {
-    stopMotors();
-    return;
-  }
-
   long leftAvg;
   long rightAvg;
 
   getEncoderAverages(leftAvg, rightAvg);
 
-  // Use the smaller side so one wheel cannot fake the distance
-  long distanceTravelled = min(leftAvg, rightAvg);
-
-  if (distanceTravelled >= targetDistanceCounts) {
-    stopMotors();
-    finished = true;
-
-    Serial.println("TARGET DISTANCE REACHED");
-    return;
+  if (millis() - lastUpdateTime >= updateTime) {
+    updateStraightSpeed(leftAvg, rightAvg);
   }
 
-  moveStraight(leftAvg, rightAvg);
-
-  printStatus(leftAvg, rightAvg, distanceTravelled);
+  printStatus(leftAvg, rightAvg);
 }
 
-void moveStraight(long leftAvg, long rightAvg) {
-  long difference = leftAvg - rightAvg;
+void updateStraightSpeed(long leftAvg, long rightAvg) {
+  float dt = (millis() - lastUpdateTime) / 1000.0;
 
-  if (abs(difference) > allowedDifference) {
-    steeringCorrection = difference * steeringGain;
+  long leftChange = leftAvg - lastLeftAvg;
+  long rightChange = rightAvg - lastRightAvg;
 
-    steeringCorrection = constrain(
-      steeringCorrection,
-      -maxSteeringCorrection,
-      maxSteeringCorrection
-    );
-  } else {
-    steeringCorrection = 0;
-  }
+  leftSpeed = leftChange / dt;
+  rightSpeed = rightChange / dt;
 
-  steeringCorrection = steeringCorrection * steeringPolarity;
+  // Positive means left side is moving faster
+  float speedDifference = leftSpeed - rightSpeed;
 
-  // If left side is ahead, reduce left power and increase right power
-  int leftPower = baseMotorPower - steeringCorrection;
-  int rightPower = baseMotorPower + steeringCorrection;
+  correction = speedDifference * speedBalanceGain;
+  correction = constrain(correction, -maxCorrection, maxCorrection);
 
-  leftPower = constrain(leftPower, 0, maxMotorPower);
-  rightPower = constrain(rightPower, 0, maxMotorPower);
+  // If left is faster, reduce left and increase right
+  int leftPower = motorPower - correction;
+  int rightPower = motorPower + correction;
+
+  leftPower = constrain(leftPower, minPower, maxPower);
+  rightPower = constrain(rightPower, minPower, maxPower);
 
   leftMotorPower = driveDirection * leftPower;
   rightMotorPower = driveDirection * rightPower;
 
   motorController.setSpeed(leftMotorChannel, leftMotorDirection * leftMotorPower);
   motorController.setSpeed(rightMotorChannel, rightMotorDirection * rightMotorPower);
+
+  lastLeftAvg = leftAvg;
+  lastRightAvg = rightAvg;
+  lastUpdateTime = millis();
 }
 
 void getEncoderAverages(long &leftAvg, long &rightAvg) {
@@ -189,6 +178,9 @@ void resetEncoderCounts() {
   rightBCount = 0;
 
   interrupts();
+
+  lastLeftAvg = 0;
+  lastRightAvg = 0;
 }
 
 void stopMotors() {
@@ -199,7 +191,7 @@ void stopMotors() {
   rightMotorPower = 0;
 }
 
-void printStatus(long leftAvg, long rightAvg, long distanceTravelled) {
+void printStatus(long leftAvg, long rightAvg) {
   if (millis() - lastPrintTime >= 500) {
     Serial.print("RUNNING");
 
@@ -209,20 +201,20 @@ void printStatus(long leftAvg, long rightAvg, long distanceTravelled) {
     Serial.print(" | Right avg: ");
     Serial.print(rightAvg);
 
-    Serial.print(" | Diff: ");
-    Serial.print(leftAvg - rightAvg);
+    Serial.print(" | Left speed: ");
+    Serial.print(leftSpeed);
+
+    Serial.print(" | Right speed: ");
+    Serial.print(rightSpeed);
 
     Serial.print(" | Correction: ");
-    Serial.print(steeringCorrection);
+    Serial.print(correction);
 
     Serial.print(" | Left motor: ");
     Serial.print(leftMotorPower);
 
     Serial.print(" | Right motor: ");
-    Serial.print(rightMotorPower);
-
-    Serial.print(" | Distance: ");
-    Serial.println(distanceTravelled);
+    Serial.println(rightMotorPower);
 
     lastPrintTime = millis();
   }
