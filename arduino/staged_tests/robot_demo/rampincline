@@ -32,42 +32,28 @@ volatile long rightBCount = 0;
 // Change to -1 if robot moves backwards
 const int driveDirection = 1;
 
-// Main speed
-int motorPower = 350;
+// Both motors get this same speed
+const int motorPower = 350;
 
-// Higher = stronger correction if one side is faster
-const int speedBalanceGain = 2;
-
-// Limit correction so it does not oversteer
-const int maxCorrection = 120;
+// Encoder distance before stopping
+const long targetDistanceCounts = 2500;
 
 // ======================================================
-// FIXED SETTINGS
+// VARIABLES
 // ======================================================
 
-const unsigned long updateTime = 100; // ms
-
-const int minPower = 0;
-const int maxPower = 500;
-
-unsigned long lastUpdateTime = 0;
 unsigned long lastPrintTime = 0;
-
-long lastLeftAvg = 0;
-long lastRightAvg = 0;
-
-float leftSpeed = 0;
-float rightSpeed = 0;
 
 int leftMotorPower = 0;
 int rightMotorPower = 0;
-int correction = 0;
+
+bool finished = false;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("Straight line encoder speed control starting...");
+  Serial.println("Same speed straight test starting...");
 
   Wire1.begin();
 
@@ -97,57 +83,40 @@ void setup() {
 
   delay(2000);
 
-  lastUpdateTime = millis();
-
-  Serial.println("Robot moving straight...");
+  Serial.println("Robot moving with same motor speed...");
 }
 
 void loop() {
   motorController.resetCommandTimeout();
+
+  if (finished) {
+    stopMotors();
+    return;
+  }
 
   long leftAvg;
   long rightAvg;
 
   getEncoderAverages(leftAvg, rightAvg);
 
-  if (millis() - lastUpdateTime >= updateTime) {
-    updateStraightSpeed(leftAvg, rightAvg);
+  long distanceTravelled = min(leftAvg, rightAvg);
+
+  if (distanceTravelled >= targetDistanceCounts) {
+    stopMotors();
+    finished = true;
+
+    Serial.println("TARGET DISTANCE REACHED");
+    return;
   }
 
-  printStatus(leftAvg, rightAvg);
-}
-
-void updateStraightSpeed(long leftAvg, long rightAvg) {
-  float dt = (millis() - lastUpdateTime) / 1000.0;
-
-  long leftChange = leftAvg - lastLeftAvg;
-  long rightChange = rightAvg - lastRightAvg;
-
-  leftSpeed = leftChange / dt;
-  rightSpeed = rightChange / dt;
-
-  // Positive means left side is moving faster
-  float speedDifference = leftSpeed - rightSpeed;
-
-  correction = speedDifference * speedBalanceGain;
-  correction = constrain(correction, -maxCorrection, maxCorrection);
-
-  // If left is faster, reduce left and increase right
-  int leftPower = motorPower - correction;
-  int rightPower = motorPower + correction;
-
-  leftPower = constrain(leftPower, minPower, maxPower);
-  rightPower = constrain(rightPower, minPower, maxPower);
-
-  leftMotorPower = driveDirection * leftPower;
-  rightMotorPower = driveDirection * rightPower;
+  // Both motors receive the same speed command
+  leftMotorPower = driveDirection * motorPower;
+  rightMotorPower = driveDirection * motorPower;
 
   motorController.setSpeed(leftMotorChannel, leftMotorDirection * leftMotorPower);
   motorController.setSpeed(rightMotorChannel, rightMotorDirection * rightMotorPower);
 
-  lastLeftAvg = leftAvg;
-  lastRightAvg = rightAvg;
-  lastUpdateTime = millis();
+  printStatus(leftAvg, rightAvg, distanceTravelled);
 }
 
 void getEncoderAverages(long &leftAvg, long &rightAvg) {
@@ -178,9 +147,6 @@ void resetEncoderCounts() {
   rightBCount = 0;
 
   interrupts();
-
-  lastLeftAvg = 0;
-  lastRightAvg = 0;
 }
 
 void stopMotors() {
@@ -191,7 +157,7 @@ void stopMotors() {
   rightMotorPower = 0;
 }
 
-void printStatus(long leftAvg, long rightAvg) {
+void printStatus(long leftAvg, long rightAvg, long distanceTravelled) {
   if (millis() - lastPrintTime >= 500) {
     Serial.print("RUNNING");
 
@@ -201,20 +167,17 @@ void printStatus(long leftAvg, long rightAvg) {
     Serial.print(" | Right avg: ");
     Serial.print(rightAvg);
 
-    Serial.print(" | Left speed: ");
-    Serial.print(leftSpeed);
-
-    Serial.print(" | Right speed: ");
-    Serial.print(rightSpeed);
-
-    Serial.print(" | Correction: ");
-    Serial.print(correction);
+    Serial.print(" | Diff: ");
+    Serial.print(leftAvg - rightAvg);
 
     Serial.print(" | Left motor: ");
     Serial.print(leftMotorPower);
 
     Serial.print(" | Right motor: ");
-    Serial.println(rightMotorPower);
+    Serial.print(rightMotorPower);
+
+    Serial.print(" | Distance: ");
+    Serial.println(distanceTravelled);
 
     lastPrintTime = millis();
   }
