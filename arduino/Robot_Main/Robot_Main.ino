@@ -2,40 +2,11 @@
 #include <Motoron.h>
 #include "ICM_20948.h"
 #include <MFRC522_I2C.h>
-
-enum RobotState {
-  STATE_STANDBY_BASE,       // Parked at base waiting for start cue
-  STATE_BASE_NAVIGATION,
-
-  STATE_RAMP,
-
-  STATE_PLAN, 
-
-  STATE_TURN,         // Go back to plan
-  STATE_ALIGNCOMPASS,
-
-  STATE_NAVIGATING_LINES,     // Tracking line in arena
-  STATE_NAVIGATING_OPEN,      // Navigating in open field
-
-  STATE_ALIGN_SEED,         // After wanted RFID detected, creep forward and use reflectance to align itself slowly
-  STATE_PLANTING,           // Paused over an RFID seed hole, activating the hopper mechanism
-
-  STATE_RESCUE_MODE,        // received signal to save robot that is right infront, tap robot
-  STATE_STRANDED_ALIVE,     // Stop wheels activate LED, do stranded protocol
-
-  STATE_REVIVED_RETURN,     // Revived - do revival protocol
-  STATE_EMERGENCY_STOP,      // Hardware kill switch fallback state
-
-  STATE_EXIT_ARENA,
-
-  STATE_AIRLOCK_B,
-
-  STATE_DEBUG,
-};
+#include "config.h"
+#include "pins.h"
+#include "robot_state.h"
 
 RobotState currentState = STATE_DEBUG;
-
-
 
 bool imuOnline   = false;
 bool motorOnline = false;
@@ -47,27 +18,14 @@ bool tofRight2Online = false;
 
 
 MotoronI2C mc(16);
-int maxAccel = 150;
-int maxDecel = 250;
-const int LEFT_MOTOR_CHANNEL = 1;
-const int RIGHT_MOTOR_CHANNEL = 2;
-const int LEFT_DIR = 1;
-const int RIGHT_DIR = -1;
 
 // --- RFID Setup ---
-#define RFID_ADDR 0x28
 MFRC522_I2C rfid(RFID_ADDR, -1, &Wire1);
 bool rfidCardPresent = false;
 
 // --- TOF Distance Sensor Setup ---
-const unsigned long SENSOR_BAUD = 921600;
-const int TOF_FILTER_SIZE = 10;
-int32_t offset1 = 0, offset2 = 0, offset3 = 0, offset4 = 0; 
 
 // --- IR Reflectance Array Setup ---
-const uint8_t IR_COUNT = 9;
-const uint8_t irPins[IR_COUNT] = { 22, 23, 24, 25, 26, 27, 28, 29, 30 };
-const uint16_t IR_TIMEOUT_MICROS = 2500;
 
 // --- IMU Setup ---
 ICM_20948_I2C myICM;
@@ -165,15 +123,15 @@ void setup() {
   Serial.println("=========================================\n");
 
   //robot info setup
-  robotInfo.seedsLeft = 5;      // Start with a full hopper
+  robotInfo.seedsLeft = STARTING_SEED_COUNT;      // Start with a full hopper
   
 
-  robotInfo.currentPos.x = -1;  //at base
-  robotInfo.currentPos.y = -1;
+  robotInfo.currentPos.x = START_X;  //at base
+  robotInfo.currentPos.y = START_Y;
   
 
-  robotInfo.destination.x = 5;
-  robotInfo.destination.y = 5;
+  robotInfo.destination.x = DEFAULT_DESTINATION_X;
+  robotInfo.destination.y = DEFAULT_DESTINATION_Y;
 
 
 
