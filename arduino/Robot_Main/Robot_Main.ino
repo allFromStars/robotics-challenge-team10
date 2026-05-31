@@ -221,6 +221,8 @@ void loop() {
 
     case STATE_EMERGENCY_STOP:
       stopMotors();
+      abortPlanting();
+
       break;
 
     case STATE_DEBUG:
@@ -233,11 +235,10 @@ void loop() {
         }
       break;
     case STATE_PLANTING:
-      // call non blocking planter
+      // call update planting after initial call
       if (updatePlanting()) {
         // The planter returned TRUE - has finished
-        
-        robotInfo.seedsLeft--; // decrease seeds
+        // Seed count is decreased inside of seed function in Hardware.ino
         Serial.print("Seeds remaining: ");
         Serial.println(robotInfo.seedsLeft);
         currentState = STATE_PLAN; // Go to next target
@@ -248,7 +249,7 @@ void loop() {
     case STATE_RAMP:
     case STATE_PLAN:
 
-    case STATE_ALIGN_SEED:
+    //case STATE_ALIGN_SEED: might not need because we are aligning anyway at every step
 
     case STATE_STRANDED_ALIVE:
     case STATE_REVIVED_RETURN:

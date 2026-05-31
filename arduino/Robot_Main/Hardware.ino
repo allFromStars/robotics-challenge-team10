@@ -140,6 +140,8 @@ static PlanterState currentPlanterState = P_IDLE;
 
 static unsigned long planterTimer = 0;
 static int currentAngle = 0;
+static int plantAngle = 30;
+
 
 // call once to start
 void startPlanting() {
@@ -167,18 +169,21 @@ bool updatePlanting() {
         currentAngle++;
         planterServo.write(currentAngle);
         
-        if (currentAngle >= 50) {
+        if (currentAngle >= plantAngle) {
           planterServo.detach(); // stop incase of stall
           currentPlanterState = P_HOLDING;
+          robotInfo.seedsLeft--;
         }
       }
       break;
 
     case P_HOLDING:
+      
       if (currentMillis - planterTimer >= 2000) {
         planterServo.attach(SERVO_PIN);
         planterTimer = currentMillis;
         currentPlanterState = P_RETURNING;
+
       }
       break;
 
@@ -206,7 +211,7 @@ void abortPlanting() {
   if (currentPlanterState != P_IDLE) {
     if (!planterServo.attached()) planterServo.attach(SERVO_PIN);
     planterServo.write(0); 
-    //delay(300); 
+    delay(300); 
     planterServo.detach();
     currentPlanterState = P_IDLE;
   }
