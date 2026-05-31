@@ -160,54 +160,36 @@ void readIR() {
 }
 
 // Non-blocking timer variable for the printing cadence
-unsigned long lastRFIDPrintTime = 0;
+
 
 void CheckRFID() {
-  // no card detected: wait for detection
-  if (!rfidCardPresent) {
-    if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
-      rfidCardPresent = false;
-      sensors.rfidInfo = 0; // 0 - nothing detected
-      return; 
-    }
-
-    // new card detected
-    rfidCardPresent = true;
-
-    // convert bytes to var
-    uint32_t packedID = 0;
-    for (byte i = 0; i < rfid.uid.size && i < 4; i++) {
-      packedID = (packedID << 8) | rfid.uid.uidByte[i];
-    }
-    sensors.rfidInfo = packedID;
-
-    rfid.PICC_HaltA();
-    rfid.PCD_StopCrypto1();
-  } 
+  // Send Wake-Up command 
+  byte bufferATQA[2];
+  byte bufferSize = sizeof(bufferATQA);
   
-  // try connecting
-  else {
-    byte bufferATQA[2];
-    byte bufferSize = sizeof(bufferATQA);
-
-    if (rfid.PICC_WakeupA(bufferATQA, &bufferSize) == 0 && rfid.PICC_ReadCardSerial()) {
-      // card still present
+  // Check if card is in the field and responds (STATUS_OK)
+  if (rfid.PICC_WakeupA(bufferATQA, &bufferSize) == rfid.STATUS_OK) {
+    
+    // Card is present - Read its serial number.
+    if (rfid.PICC_ReadCardSerial()) {
       uint32_t packedID = 0;
       for (byte i = 0; i < rfid.uid.size && i < 4; i++) {
         packedID = (packedID << 8) | rfid.uid.uidByte[i];
       }
-      sensors.rfidInfo = packedID;
-      rfidCardPresent = true;
       
+      // Save
+      sensors.rfidInfo = packedID; 
+      rfidCardPresent = true; 
+
+      //Put the card to sleep
       rfid.PICC_HaltA();
       rfid.PCD_StopCrypto1();
-    } 
-    else {
-      // lost contact
-      rfidCardPresent = false;
-      sensors.rfidInfo = 0; // 0 - nothing detected
-      rfid.PCD_StopCrypto1();
     }
+  } 
+  else {
+    sensors.rfidInfo = 0; 
+    rfidCardPresent = false; 
+    rfid.PCD_StopCrypto1();
   }
 }
 
