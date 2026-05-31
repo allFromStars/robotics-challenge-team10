@@ -6,7 +6,9 @@
 #include "pins.h"
 #include "robot_state.h"
 
-RobotState currentState = STATE_DEBUG;
+bool debugIRMode = false;
+
+RobotState currentState = STATE_DEBUG; 
 
 bool imuOnline   = false;
 bool motorOnline = false;
@@ -15,6 +17,7 @@ bool tofFrontOnline  = false;
 bool tofLeftOnline   = false;
 bool tofRight1Online = false;
 bool tofRight2Online = false;
+
 
 
 MotoronI2C mc(16);
@@ -52,8 +55,8 @@ struct Coordinate {
 
 struct INFO {
   int seedsLeft;
-  Coordinate currentPos;  // Holds your active x and y
-  Coordinate destination; // Holds your target x and y
+  Coordinate currentPos;  
+  Coordinate destination;
 };
 INFO robotInfo;
 
@@ -90,6 +93,16 @@ void setup() {
     pinMode(irPins[i], INPUT);
   }
 
+  // Initialise Encoders
+  pinMode(LEFT_ENCODER_PIN_A, INPUT_PULLUP);
+  pinMode(LEFT_ENCODER_PIN_B, INPUT_PULLUP);
+  pinMode(RIGHT_ENCODER_PIN_A, INPUT_PULLUP);
+  pinMode(RIGHT_ENCODER_PIN_B, INPUT_PULLUP);
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN_A), readLeftEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN_A), readRightEncoder, CHANGE);
 
   imuOnline   = initIMU();
   motorOnline = initMotors();
@@ -132,15 +145,41 @@ void setup() {
 
   robotInfo.destination.x = DEFAULT_DESTINATION_X;
   robotInfo.destination.y = DEFAULT_DESTINATION_Y;
-
+  
 
 
 }
 
 void loop() {
-  //DebugSensors();
-
   refreshAllSensors();
+
+  if (digitalRead(BUTTON_PIN) == LOW) { 
+    currentState = STATE_EMERGENCY_STOP;
+  }
+
+  if (Serial.available() > 0) {
+      char cmd = Serial.read();
+      
+      if (cmd == 'g' || cmd == 'G') {
+        // ... go logic
+      }
+      else if (cmd == 'd' || cmd == 'D') {
+        debugIRMode = false; // Ensure it enters standard debug
+        currentState = STATE_DEBUG;
+        Serial.println("--- Entering Standard Debug Mode ---");
+      }
+      else if (cmd == 'i' || cmd == 'I') {
+        debugIRMode = true; // Swap to IR debug
+        currentState = STATE_DEBUG;
+        Serial.println("--- Entering Full IR Debug Mode ---");
+      }
+      else if (cmd == 'c' || cmd == 'C') {
+        Serial.println("--- Manual Calibration Triggered ---");
+        stopMotors(); 
+        startIRCalibration(); 
+        currentState = STATE_CALIBRATING_IR; 
+      }
+  }
 
 
   switch (currentState) {
@@ -149,55 +188,73 @@ void loop() {
       stopMotors();
       break;
 
-    case STATE_BASE_NAVIGATION:
+    case STATE_CALIBRATING_IR:
+      // Run the non-blocking math
+      updateIRCalibration();
+      
+      // When 12 seconds are up, transition to standby!
+      if (isCalibrationComplete()) {
+        Serial.println("Robot Ready. Waiting for 'g' command.");
+        currentState = STATE_STANDBY_BASE;
+      }
       break;
 
-    case STATE_RAMP:
-      break;
 
-    case STATE_PLAN:
-      break;
+    case STATE_NAVIGATING_LINES:
 
-    case STATE_TURN:
-      break;
+      updateTask3LineNavigation(); 
 
-    case STATE_ALIGN_SEED:
-      break;
-
-    case STATE_PLANTING:
-      break;
-
-    case STATE_STRANDED_ALIVE:
-      stopMotors();
-      break;
-
-    case STATE_REVIVED_RETURN:
+      if (task3LineNavigationComplete()) {
+         Serial.println("SUCCESS: Reached target nodes!");
+         currentState = STATE_STANDBY_BASE; 
+      } 
+      else if (task3LineNavigationFailed()) {
+         Serial.println("ERROR: Failsafe triggered (Lost line or timeout).");
+         currentState = STATE_EMERGENCY_STOP; 
+      }
       break;
 
     case STATE_EMERGENCY_STOP:
       stopMotors();
-      break;
-    
-    case STATE_EXIT_ARENA:
-      break;
-
-    case STATE_AIRLOCK_B:
       break;
 
     case STATE_DEBUG:
       DebugSensors();
       break;
 
+    case STATE_TURN:
+      if (updateTurnAngle()) {
+          // Turn is complete! Transition to next state...
+        }
+      break;
+
+    case STATE_BASE_NAVIGATION:
+    case STATE_RAMP:
+    case STATE_PLAN:
+
+    case STATE_ALIGN_SEED:
+    case STATE_PLANTING:
+    case STATE_STRANDED_ALIVE:
+    case STATE_REVIVED_RETURN:
+    case STATE_EXIT_ARENA:
+    case STATE_AIRLOCK_B:
+      stopMotors(); 
+      break;
+
     default:
       stopMotors();
       break;
   }
-
-  // run serial 4 times per sec
+  /*
+    // run serial 4 times per sec
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 250) {
     lastPrint = millis();
 
   }
+  */
 }
+
+
+
 

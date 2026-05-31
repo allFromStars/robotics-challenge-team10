@@ -51,7 +51,6 @@ bool initIMU() {
   return true;
 }
 
-// CRITICAL SECURITY UPGRADE: Only queries components that successfully passed POST
 void refreshAllSensors() {
   readAllTOF();
   readIR(); // IR stays active (uses native microcontroller pins)
@@ -240,6 +239,7 @@ float getHeadingDegrees() {
   return headingDegrees;
 }
 
+
 void DebugSensors() {
   refreshAllSensors();
 
@@ -247,34 +247,44 @@ void DebugSensors() {
   if (millis() - lastPrint >= DEBUG_PRINT_INTERVAL_MS) {
     lastPrint = millis();
     
-
-    Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
-    Serial.print(" | COMPASS NORTH: "); Serial.print(sensors.compassNorth, 1);
-    Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
-    Serial.print(", L="); Serial.print(sensors.tof_left);
-    Serial.print(", R1="); Serial.print(sensors.tof_right1);
-    Serial.print(", R2="); Serial.print(sensors.tof_right2);
-    Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
-    Serial.print(" | "); 
-
-
-    static uint32_t lastPrintedID = 0;
-
-    if (sensors.rfidInfo != 0) {
-      if (sensors.rfidInfo != lastPrintedID) {
-
-        Serial.print("Card detected: 0x");
-        Serial.println(sensors.rfidInfo, HEX);
-        lastPrintedID = sensors.rfidInfo;
-      } else {
-
-        Serial.println("Card detected: same card");
+    if (debugIRMode) {
+      // ==========================================
+      // IR ARRAY MODE (Prints all pins)
+      // ==========================================
+      Serial.print("IR ARRAY [0-8]: ");
+      for (int i = 0; i < IR_COUNT; i++) {
+        // Formats it neatly: val, val, val
+        Serial.print(sensors.irLineArray[i]);
+        if (i < IR_COUNT - 1) Serial.print(", "); 
       }
+      Serial.println(); // Drop to next line
     } 
     else {
 
-      Serial.println("no card detected");
-      lastPrintedID = 0; 
+      Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
+      Serial.print(" | COMPASS NORTH: "); Serial.print(sensors.compassNorth, 1);
+      Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
+      Serial.print(", L="); Serial.print(sensors.tof_left);
+      Serial.print(", R1="); Serial.print(sensors.tof_right1);
+      Serial.print(", R2="); Serial.print(sensors.tof_right2);
+      Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
+      Serial.print(" | "); 
+
+      static uint32_t lastPrintedID = 0;
+
+      if (sensors.rfidInfo != 0) {
+        if (sensors.rfidInfo != lastPrintedID) {
+          Serial.print("Card detected: 0x");
+          Serial.println(sensors.rfidInfo, HEX);
+          lastPrintedID = sensors.rfidInfo;
+        } else {
+          Serial.println("Card detected: same card");
+        }
+      } 
+      else {
+        Serial.println("no card detected");
+        lastPrintedID = 0; 
+      }
     }
   }
 }

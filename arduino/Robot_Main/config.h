@@ -14,6 +14,19 @@ const int FORWARD_SIGN = 1;
 
 const int MOTOR_COMMAND_TIMEOUT_MS = 1000;
 
+const int MaxMotorSpeed = 600;
+
+// ============================================================
+// --- TURN PID TUNING ---
+// ============================================================
+const float turnKp = 15.5;
+const float turnKi = 1.8;
+const float turnKd = 1.8;
+
+const int MOTOR_MAX_LIMIT = 500;  
+const int MOTOR_MIN_LIMIT = 200;
+
+
 // ============================================================
 // TOF distance sensor configuration
 // ============================================================

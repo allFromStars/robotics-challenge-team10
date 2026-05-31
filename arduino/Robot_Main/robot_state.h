@@ -17,6 +17,7 @@
 }; */
 
 enum RobotState {
+  STATE_CALIBRATING_IR,
   STATE_STANDBY_BASE,       // Parked at base waiting for start cue
   STATE_BASE_NAVIGATION,
 
