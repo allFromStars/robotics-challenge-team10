@@ -179,6 +179,11 @@ void loop() {
         startIRCalibration(); 
         currentState = STATE_CALIBRATING_IR; 
       }
+      else if (cmd == 'p' || cmd == 'P') {
+        Serial.println("PLANTING SEQUENCE");
+        startPlanting(); 
+        currentState = STATE_PLANTING; 
+      }
   }
 
 
@@ -227,13 +232,24 @@ void loop() {
           // Turn is complete! Transition to next state...
         }
       break;
+    case STATE_PLANTING:
+      // call non blocking planter
+      if (updatePlanting()) {
+        // The planter returned TRUE - has finished
+        
+        robotInfo.seedsLeft--; // decrease seeds
+        Serial.print("Seeds remaining: ");
+        Serial.println(robotInfo.seedsLeft);
+        currentState = STATE_PLAN; // Go to next target
+      }
+      break;
 
     case STATE_BASE_NAVIGATION:
     case STATE_RAMP:
     case STATE_PLAN:
 
     case STATE_ALIGN_SEED:
-    case STATE_PLANTING:
+
     case STATE_STRANDED_ALIVE:
     case STATE_REVIVED_RETURN:
     case STATE_EXIT_ARENA:

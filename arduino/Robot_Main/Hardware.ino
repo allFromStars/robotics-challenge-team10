@@ -1,3 +1,5 @@
+#include <Servo.h>
+
 
 void initWire() {
   Serial.println("Initialising wire...");
@@ -127,4 +129,85 @@ bool updateTurnAngle() {
   }
   
   return false; 
+}
+
+
+static Servo planterServo;
+
+// --- Planter Sub-State Machine ---
+enum PlanterState { P_IDLE, P_MOVING_OUT, P_HOLDING, P_RETURNING };
+static PlanterState currentPlanterState = P_IDLE;
+
+static unsigned long planterTimer = 0;
+static int currentAngle = 0;
+
+// call once to start
+void startPlanting() {
+  Serial.println("Starting planting sequence...");
+  planterServo.attach(SERVO_PIN);
+  planterServo.write(0);
+  currentAngle = 0;
+  planterTimer = millis();
+  currentPlanterState = P_MOVING_OUT;
+}
+
+
+// Returns 'true' when the seed is fully planted and the arm has returned.
+bool updatePlanting() {
+  unsigned long currentMillis = millis();
+
+  switch (currentPlanterState) {
+    case P_IDLE:
+
+      return true; 
+
+    case P_MOVING_OUT:
+      if (currentMillis - planterTimer >= 50) {
+        planterTimer = currentMillis;
+        currentAngle++;
+        planterServo.write(currentAngle);
+        
+        if (currentAngle >= 50) {
+          planterServo.detach(); // stop incase of stall
+          currentPlanterState = P_HOLDING;
+        }
+      }
+      break;
+
+    case P_HOLDING:
+      if (currentMillis - planterTimer >= 2000) {
+        planterServo.attach(SERVO_PIN);
+        planterTimer = currentMillis;
+        currentPlanterState = P_RETURNING;
+      }
+      break;
+
+    case P_RETURNING:
+      if (currentMillis - planterTimer >= 50) {
+        planterTimer = currentMillis;
+        currentAngle--;
+        planterServo.write(currentAngle);
+        
+        if (currentAngle <= 0) {
+          planterServo.detach();
+          currentPlanterState = P_IDLE; // Reset for next time
+          Serial.println("Planting complete! Arm returned.");
+          return true; 
+        }
+      }
+      break;
+  }
+  
+  return false; 
+}
+
+
+void abortPlanting() {
+  if (currentPlanterState != P_IDLE) {
+    if (!planterServo.attached()) planterServo.attach(SERVO_PIN);
+    planterServo.write(0); 
+    //delay(300); 
+    planterServo.detach();
+    currentPlanterState = P_IDLE;
+  }
 }

@@ -3,6 +3,9 @@
 
 #include <Arduino.h>
 
+// Servo motor
+const int SERVO_PIN = 33;
+
 // ============================================================
 // Motoron motor channels
 // ============================================================
@@ -26,10 +29,10 @@ const int RIGHT_ENCODER_PIN_B = D5;
 // IR reflectance sensor array
 // ============================================================
 
-const uint8_t IR_COUNT = 9; 
+const uint8_t IR_COUNT = 6; 
 
 const uint8_t irPins[IR_COUNT] = {
-  22, 23, 24, 25, 26, 27, 28, 29, 30
+  22, 23, 24, 25, 26, 27//, 28, 29, 30
 };
 
 // ============================================================
@@ -75,5 +78,7 @@ const int RGB_GREEN_PIN = D50;
 
 // Add blue pin here if installed later.
 // const int RGB_BLUE_PIN = ...;
+
+
 
 #endif
