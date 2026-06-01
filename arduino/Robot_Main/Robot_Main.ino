@@ -127,6 +127,15 @@ void setup() {
   pinMode(RIGHT_ENCODER_PIN_B, INPUT_PULLUP);
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUMPER_PIN, INPUT_PULLUP);
+
+  // RGB LED Setup (Common Anode) ---
+  pinMode(RGB_RED_PIN, OUTPUT);
+  pinMode(RGB_GREEN_PIN, OUTPUT);
+  
+  // HIGH = OFF, LOW = ON
+  digitalWrite(RGB_RED_PIN, HIGH); 
+  digitalWrite(RGB_GREEN_PIN, HIGH);
 
   attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN_A), readLeftEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN_A), readRightEncoder, CHANGE);
@@ -222,6 +231,11 @@ void loop() {
         Serial.println("RAMP");
         startRampWallFollowing(); 
         currentState = STATE_RAMP; 
+      }
+      else if (cmd == 's' || cmd == 'S') {
+        Serial.println("SAVING RESCUE MODE");
+        startRampWallFollowing(); 
+        currentState = STATE_RESCUE_MODE; 
       }
   }
 
@@ -427,8 +441,54 @@ void loop() {
       }
       break;
     }
+    case STATE_RESCUE_MODE: {
+      // Static memory for the non-blocking hold
+      static bool rescueContactMade = false;
+      static unsigned long contactTimeMs = 0;
 
-    //case STATE_ALIGN_SEED: might not need because we are aligning anyway at every step
+      //Approach the target
+      if (!rescueContactMade) {
+        int rescueStatus = updateRescueApproach();
+        
+        if (rescueStatus == 1) {
+          // contact - Mark the time and trigger the LED
+          rescueContactMade = true;
+          contactTimeMs = millis();
+          
+          // turn on LED
+          digitalWrite(RGB_GREEN_PIN, LOW); 
+          Serial.println("[RESCUE] Contact made! Illuminating GREEN LED and holding for 2s...");
+        } 
+        else if (rescueStatus == -1) {
+          Serial.println("ABORT: Rescue timeout triggered.");
+          currentState = STATE_EMERGENCY_STOP; 
+        }
+      } 
+      
+
+      else {
+
+        stopMotors(); 
+        
+        if (millis() - contactTimeMs >= 2000) {
+          // Turn OFF Green LED 
+          digitalWrite(RGB_GREEN_PIN, HIGH);
+          digitalWrite(RGB_RED_PIN, HIGH);
+          //digitalWrite(RGB_BLUE_PIN, HIGH);
+          
+          Serial.println("[RESCUE] 2-second hold complete. Initiating return sequence.");
+          
+          robotInfo.finalDestination = {START_X, START_Y}; 
+          newPathNeeded = true;
+          
+
+          rescueContactMade = false; 
+          
+          currentState = STATE_EMERGENCY_STOP; 
+        }
+      }
+      break;
+    }
 
     case STATE_STRANDED_ALIVE:
     case STATE_REVIVED_RETURN:

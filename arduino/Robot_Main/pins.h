@@ -79,6 +79,7 @@ const int RGB_GREEN_PIN = D50;
 // Add blue pin here if installed later.
 // const int RGB_BLUE_PIN = ...;
 
+const int BUMPER_PIN = D13;
 
 
 #endif

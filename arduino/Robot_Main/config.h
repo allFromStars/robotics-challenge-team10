@@ -135,8 +135,8 @@ const unsigned long DEBUG_PRINT_INTERVAL_MS = 250;
 // Wall Following & Ramp Configuration
 // ============================================================
 const int TARGET_WALL_DIST_MM = 80;     
-const int FRONT_COLLISION_DIST_MM = 30; // Hard stop distance
-const int TAILGATE_START_DIST_MM = 40;  // Begin slowing down at this distance
+const int FRONT_COLLISION_DIST_MM = 100; // Hard stop distance
+const int TAILGATE_START_DIST_MM = 300;  // Begin slowing down at this distance
 
 const float wallKp = 1.2;
 const float wallKd = 2.5;
@@ -146,4 +146,17 @@ const float TARGET_ENCODER_SPEED = 1000.0;
 const float speedKp = 0.5;
 const float speedKi = 0.2;
 const int RAMP_MAX_PWM = 550;
+
+
+// RESCUE PARAMETERS
+
+const int RESCUE_CONTACT_DIST_MM = 60; 
+
+
+const int RESCUE_DETECT_DIST_MM = 350; 
+
+const int RESCUE_MAX_SPEED = 280; // Cruising speed
+const int RESCUE_MIN_SPEED = 150; // Crawl speed (must be high enough to overcome motor friction)
+const unsigned long RESCUE_TIMEOUT_MS = 15000;
+
 #endif

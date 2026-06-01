@@ -79,14 +79,14 @@ void driveForwardMagnitudes(int leftMagnitude, int rightMagnitude) {
   driveMotors(FORWARD_SIGN * leftMagnitude, FORWARD_SIGN * rightMagnitude);
 }
 
-float normalizeAngleDeg(float angle) {
+float normaliseAngleDeg(float angle) {
   while (angle > 180.0) angle -= 360.0;
   while (angle < -180.0) angle += 360.0;
   return angle;
 }
 
 float headingErrorDeg(float targetDeg, float currentDeg) {
-  return normalizeAngleDeg(targetDeg - currentDeg);
+  return normaliseAngleDeg(targetDeg - currentDeg);
 }
 
 // --- Sensor Processors ---
@@ -496,34 +496,34 @@ bool updatePostPlantAdvance() {
 
 // Ramp Wall Following with distance sensors + front distance sensors for stopping
 
-static bool rampInitialized = false;
+static bool rampInitialised = false;
 static float wallLastError = 0;
 static float speedIntegral = 0;
 static unsigned long lastWallMicros = 0;
 static long lastAvgEncoderCount = 0;
 
 void startRampWallFollowing() {
-  Serial.println("[RAMP] Initializing Wall Follower & Clearing Memory...");
+  Serial.println("[RAMP] Initialising Wall Follower & Clearing Memory...");
   wallLastError = 0;
   speedIntegral = 0;
   resetSegmentEncoders();
   lastAvgEncoderCount = 0;
   lastWallMicros = micros();
-  rampInitialized = true;
+  rampInitialised = true;
 }
 
 // Returns 1 if RFID reached, 0 if still driving/waiting
 int updateRampWallFollowing(bool trackLeftWall) {
   
   // initialise
-  if (!rampInitialized || (micros() - lastWallMicros > 200000)) {
+  if (!rampInitialised || (micros() - lastWallMicros > 200000)) {
     startRampWallFollowing();
   }
 
   // check for rfid to finish
   if (sensors.rfidInfo != 0) {
     stopMotors();
-    rampInitialized = false; // Reset for next time
+    rampInitialised = false; // Reset for next time
     return 1; // Signal completion to Main loop
   }
 
@@ -569,7 +569,10 @@ int updateRampWallFollowing(bool trackLeftWall) {
   if (speedIntegral < -300) speedIntegral = -300;
 
   int basePWM = (int)(speedError * speedKp + speedIntegral * speedKi);
-  if (basePWM < 150) basePWM = 150; 
+  
+
+  // allow motors to apply up to -200 reverse PWM to actively brake if going too fast (decline)
+  if (basePWM < -200) basePWM = -200; 
   if (basePWM > RAMP_MAX_PWM) basePWM = RAMP_MAX_PWM;
 
   // STEERING 
@@ -597,4 +600,69 @@ int updateRampWallFollowing(bool trackLeftWall) {
 
   driveMotors(leftSpeed, rightSpeed);
   return 0; // Still driving
+}
+
+
+// Touch-Based Robot Revival
+
+static bool rescueInitialised = false;
+static unsigned long rescueStartMs = 0; 
+static float rescueTargetHeading = 0.0; // remember heading incase no lines
+
+void startRescueApproach() {
+  Serial.println("[RESCUE] Target locked. Initiating approach vector...");
+  rescueInitialised = true;
+  lastError = 0; 
+  resetSegmentEncoders();
+  rescueStartMs = millis(); 
+  
+  // get IMU angle and lock
+  rescueTargetHeading = sensors.yaw; 
+}
+
+// Returns 1 if successful, 0 if approaching, -1 if timeout/failed
+int updateRescueApproach() {
+  if (!rescueInitialised) startRescueApproach();
+
+  // Timeout Check
+
+  if (millis() - rescueStartMs > RESCUE_TIMEOUT_MS) {
+    stopMotors();
+    rescueInitialised = false;
+    Serial.println("[RESCUE ERROR] Timeout! Target missed or switch failed.");
+    return -1; // Signal a failure to the main loop
+  }
+
+  int dist = sensors.tof_front;
+
+  // Physical Switch (D13)
+  if (digitalRead(BUMPER_PIN) == LOW) {
+    stopMotors();
+    rescueInitialised = false; 
+    Serial.println("[RESCUE] Mechanical Contact Confirmed!");
+    return 1; 
+  }
+
+  // TOF Proportional Velocity Ramp
+  int targetSpeed = RESCUE_MAX_SPEED;
+  if (dist > 0 && dist < RESCUE_DETECT_DIST_MM) {
+    float distanceRatio = 0.0;
+    if (dist > RESCUE_CONTACT_DIST_MM) {
+      distanceRatio = (float)(dist - RESCUE_CONTACT_DIST_MM) / 
+                      (float)(RESCUE_DETECT_DIST_MM - RESCUE_CONTACT_DIST_MM);
+    }
+    targetSpeed = RESCUE_MIN_SPEED + (int)(distanceRatio * (RESCUE_MAX_SPEED - RESCUE_MIN_SPEED));
+  }
+
+  processLinePosition();
+
+  if (lineDetected) {
+    // If we have lines, use the IR sensors
+    followGridLinePD(targetSpeed);
+  } else {
+    // If there is no tape, use IMU angle
+    driveForwardWithHeadingHold(rescueTargetHeading, targetSpeed);
+  }
+
+  return 0; // Still approaching
 }
