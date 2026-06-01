@@ -1,5 +1,14 @@
 # robotics-challenge-team10
 
+Task 1: Standard Line Tracking
+
+
+<img width="1355" height="2996" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (2)" src="https://github.com/user-attachments/assets/e59b0f3e-4e04-47a7-a80f-d33a01cc76af" />
+
+
+
+
+
 
 Task 2: Intersection and Tag alignment
 
