@@ -13,6 +13,11 @@ bool calculateWeightedPath() {
   int head = 0, tail = 0;
 
   Coordinate target = robotInfo.finalDestination;
+  if (target.x < 0 || target.x >= GRID_WIDTH || target.y < 0 || target.y >= GRID_HEIGHT) {
+    Serial.println("[ERROR] Pathfinding target is outside the map!");
+    return false;
+  }
+
   costGrid[target.y][target.x] = 0; 
   queue[tail++] = target;
 
@@ -80,10 +85,15 @@ bool calculateWeightedPath() {
   robotInfo.totalWaypoints = 0;
   robotInfo.currentWaypointIdx = 0;
   Coordinate tracer = robotInfo.currentPos;
+
+  if (tracer.x < 0 || tracer.x >= GRID_WIDTH || tracer.y < 0 || tracer.y >= GRID_HEIGHT) {
+    Serial.println("[ERROR] Robot position is outside the map!");
+    return false;
+  }
   
   if (costGrid[tracer.y][tracer.x] == 9999) return false; 
 
-  while (!(tracer.x == target.x && tracer.y == target.y) && robotInfo.totalWaypoints < 81) {
+  while (!(tracer.x == target.x && tracer.y == target.y) && robotInfo.totalWaypoints < 30) {
     int bestDir = -1;
     int lowestCost = 99999;
 
@@ -107,6 +117,12 @@ bool calculateWeightedPath() {
 
     robotInfo.waypoints[robotInfo.totalWaypoints++] = tracer;
   }
+
+  if (!(tracer.x == target.x && tracer.y == target.y)) {
+    Serial.println("[ERROR] Path exceeded waypoint storage!");
+    return false;
+  }
+
   return true;
 }
 

@@ -186,7 +186,9 @@ void loop() {
       char cmd = Serial.read();
       
       if (cmd == 'g' || cmd == 'G') {
-        // ... go logic
+        newPathNeeded = true;
+        currentState = STATE_PLAN;
+        Serial.println("--- Starting Mission Plan ---");
       }
       else if (cmd == 'd' || cmd == 'D') {
         debugIRMode = false; // Ensure it enters standard debug
@@ -253,7 +255,11 @@ void loop() {
 
       // if new path is required, calculate, if not increment waypoint
       if (newPathNeeded) {
-        calculateWeightedPath();
+        if (!calculateWeightedPath()) {
+          Serial.println("ERROR: No valid path to target.");
+          currentState = STATE_EMERGENCY_STOP;
+          break;
+        }
         robotInfo.currentWaypointIdx = 0;
         newPathNeeded = false;
       } else {
@@ -291,7 +297,7 @@ void loop() {
       updateTask3LineNavigation(); 
 
       if (task3LineNavigationComplete()) {
-        Serial.println("SUCCESS: Reached target nodes!");
+        Serial.println("SUCCESS: Reached next node!");
         robotInfo.currentPos = robotInfo.getNextNode(); // Update Map Memory
         snapYawToGrid();                                // EXPERIMENTAL round the gyro reading to snap to nearest 90 degrees while we are navigating grid lines
          
@@ -390,7 +396,6 @@ void loop() {
   }
 
 }
-
 
 
 

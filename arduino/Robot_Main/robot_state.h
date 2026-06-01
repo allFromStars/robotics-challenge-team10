@@ -3,7 +3,7 @@
 
 const int GRID_WIDTH  = 9; 
 const int GRID_HEIGHT = 9;
-bool newPathNeeded;
+bool newPathNeeded = true;
 
 // 1 = Grid Line Area (.) -> Navigation Weight: 1
 // 2 = Open Field Area (-) -> Navigation Weight: 2 * Multiplier

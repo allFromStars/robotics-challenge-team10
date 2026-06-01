@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // Servo motor
-const int SERVO_PIN = 33;
+const int SERVO_PIN = A1;
 
 // ============================================================
 // Motoron motor channels
@@ -32,7 +32,7 @@ const int RIGHT_ENCODER_PIN_B = D5;
 const uint8_t IR_COUNT = 9; 
 
 const uint8_t irPins[IR_COUNT] = {
-  22, 23, 24, 25, 26, 27//, 28, 29, 30
+  22, 23, 24, 25, 26, 27 , 28, 29, 30
 };
 
 // ============================================================

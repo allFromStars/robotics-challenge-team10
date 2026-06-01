@@ -58,8 +58,8 @@ const float MAG_DECLINATION_DEG = 4.0;
 
 const int STARTING_SEED_COUNT = 5;
 
-const int START_X = -1;
-const int START_Y = -1;
+const int START_X = 0;
+const int START_Y = 0;
 
 const int DEFAULT_DESTINATION_X = 5;
 const int DEFAULT_DESTINATION_Y = 5;

@@ -31,14 +31,6 @@ long getAverageEncoderCounts() {
 }
 
 
-// --- Calibration Variables ---
-unsigned long calibrationStartMs = 0;
-const unsigned long CALIBRATION_TIME_MS = 12000; // 12 seconds of sweeping
-bool calibrationComplete = false;
-
-
-
-
 const int GRID_LINE_SPEED = 220;
 const int AFTER_RFID_SLOW_SPEED = 150;
 const int REACQUIRE_SPEED = 150;
@@ -54,13 +46,7 @@ const unsigned long NODE_RFID_CONFIRM_TIMEOUT_MS = 1200;
 const unsigned long RFID_TO_HOLE_TIMEOUT_MS = 1800;
 const unsigned long NODE_PAUSE_MS = 600;
 const unsigned long REACQUIRE_AFTER_NODE_TIMEOUT_MS = 1800;
-int TARGET_CONFIRMED_NODES = 4;
-const unsigned long TASK3_TIMEOUT_MS = 45000;
-
-//IR
-uint16_t calibratedValues[IR_COUNT];
-uint16_t sensorMin[IR_COUNT] = {0}; // Needs calibration function to populate
-uint16_t sensorMax[IR_COUNT] = {1000}; 
+const unsigned long LINE_NAV_TIMEOUT_MS = 45000;
 
 const int LINE_CENTER = 4000;
 const uint16_t LINE_THRESHOLD = 400;
@@ -79,54 +65,6 @@ bool pendingNodeTag = false;
 unsigned long pendingNodeTagSeenMs = 0;
 
 
-// Call this once to trigger the calibration
-void startIRCalibration() {
-  Serial.println("--- Starting IR Calibration ---");
-  Serial.println("Sweep the sensor array over the white floor and black line!");
-  
-  // Reset the min and max trackers
-  for (uint8_t i = 0; i < IR_COUNT; i++) {
-    sensorMin[i] = 2500; // 2500 is the max IR timeout
-    sensorMax[i] = 0;
-  }
-  
-  calibrationStartMs = millis();
-  calibrationComplete = false;
-}
-
-void updateIRCalibration() {
-  // Constantly check the live sensor struct to find the new brightest/darkest values
-  for (uint8_t i = 0; i < IR_COUNT; i++) {
-    if (sensors.irLineArray[i] < sensorMin[i]) {
-      sensorMin[i] = sensors.irLineArray[i];
-    }
-    if (sensors.irLineArray[i] > sensorMax[i]) {
-      sensorMax[i] = sensors.irLineArray[i];
-    }
-  }
-
-  // Print a countdown every 1 second
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 1000) {
-    lastPrint = millis();
-    int secondsLeft = (CALIBRATION_TIME_MS - (millis() - calibrationStartMs)) / 1000;
-    Serial.print("Calibrating... "); Serial.print(secondsLeft); Serial.println("s remaining");
-  }
-
-  // Check if the 12 seconds are up
-  if (millis() - calibrationStartMs >= CALIBRATION_TIME_MS) {
-    calibrationComplete = true;
-    Serial.println("--- IR Calibration Complete! ---");
-  }
-}
-
-bool isCalibrationComplete() {
-  return calibrationComplete;
-}
-
-
-
-
 // --- State Machine Enum ---
 enum Task3LineState {
   T3_LINE_IDLE, T3_LINE_FOLLOW, T3_NODE_CANDIDATE,
@@ -134,8 +72,7 @@ enum Task3LineState {
   T3_LINE_DONE, T3_LINE_FAILSAFE
 };
 Task3LineState task3LineState = T3_LINE_IDLE;
-int confirmedNodes = 0;
-unsigned long taskStartMs = 0, stateStartMs = 0, nodeCandidateStartMs = 0;
+unsigned long taskStartMs = 0, nodeCandidateStartMs = 0;
 unsigned long nodePauseStartMs = 0, reacquireStartMs = 0;
 float continueHeadingDeg = 0.0;
 
@@ -228,11 +165,11 @@ void updateTask3LineNavigation() {
   bool tagDetected = (sensors.rfidInfo != 0); 
 
 
-  if (taskStartMs > 0 && millis() - taskStartMs > TASK3_TIMEOUT_MS && 
+  if (taskStartMs > 0 && millis() - taskStartMs > LINE_NAV_TIMEOUT_MS && 
       task3LineState != T3_LINE_IDLE && task3LineState != T3_LINE_DONE && task3LineState != T3_LINE_FAILSAFE) {
     stopMotors();
     task3LineState = T3_LINE_FAILSAFE;
-    Serial.println("Task 3 TIMEOUT");
+    Serial.println("Line navigation TIMEOUT");
     return;
   }
 
@@ -262,7 +199,6 @@ void updateTask3LineNavigation() {
             nodeCandidateTagSeen = tagDetected;
             
             if (pendingNodeTag) {
-                confirmedNodes++;
                 nodePauseStartMs = millis();
                 nodeCandidateTagSeen = true;
                 pendingNodeTag = false;
@@ -285,7 +221,6 @@ void updateTask3LineNavigation() {
       if (tagDetected) nodeCandidateTagSeen = true;
 
       if (nodeCandidateTagSeen) {
-        confirmedNodes++;
         nodePauseStartMs = millis();
         task3LineState = T3_NODE_CONFIRMED_PAUSE;
       } else if (lineDetected) {
@@ -299,14 +234,8 @@ void updateTask3LineNavigation() {
     case T3_NODE_CONFIRMED_PAUSE:
       stopMotors();
       if (millis() - nodePauseStartMs >= NODE_PAUSE_MS) {
-        if (confirmedNodes >= TARGET_CONFIRMED_NODES) task3LineState = T3_LINE_DONE;
-        else {
-            resetSegmentEncoders();
-            reacquireStartMs = millis();
-            lastError = 0;
-            pendingNodeTag = false;
-            task3LineState = T3_REACQUIRE_AFTER_NODE;
-        }
+        // One confirmed node completes the move requested by STATE_PLAN.
+        task3LineState = T3_LINE_DONE;
       }
       break;
 
@@ -329,12 +258,13 @@ void updateTask3LineNavigation() {
 
 
 void startTask3LineNavigation() {
-  confirmedNodes = 0;
   taskStartMs = millis();
   pendingNodeTag = false;
   lastError = 0;
+  continueHeadingDeg = sensors.yaw;
+  reacquireStartMs = millis();
   resetSegmentEncoders();
-  task3LineState = T3_LINE_FOLLOW;
+  task3LineState = T3_REACQUIRE_AFTER_NODE;
 }
 
 
