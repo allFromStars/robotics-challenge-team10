@@ -78,7 +78,7 @@ const long POST_PLANT_ADVANCE_COUNTS = 900;
 const unsigned long POST_PLANT_ADVANCE_TIMEOUT_MS = 1500;
 const unsigned long START_NODE_EXIT_TIMEOUT_MS = 2500;
 const unsigned long REACQUIRE_AFTER_NODE_TIMEOUT_MS = 1800;
-const unsigned long LINE_NAV_TIMEOUT_MS = 45000;
+const unsigned long LINE_NAV_TIMEOUT_MS = 10000;
 
 const int LINE_CENTER = 4000;
 const uint16_t LINE_THRESHOLD = 400;
@@ -131,4 +131,19 @@ const int DEFAULT_DESTINATION_Y = 5;
 
 const unsigned long DEBUG_PRINT_INTERVAL_MS = 250;
 
+// ============================================================
+// Wall Following & Ramp Configuration
+// ============================================================
+const int TARGET_WALL_DIST_MM = 80;     
+const int FRONT_COLLISION_DIST_MM = 30; // Hard stop distance
+const int TAILGATE_START_DIST_MM = 40;  // Begin slowing down at this distance
+
+const float wallKp = 1.2;
+const float wallKd = 2.5;
+const int WALL_MAX_CORRECTION = 150;     
+
+const float TARGET_ENCODER_SPEED = 1000.0; 
+const float speedKp = 0.5;
+const float speedKi = 0.2;
+const int RAMP_MAX_PWM = 550;
 #endif

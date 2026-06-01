@@ -91,6 +91,8 @@ bool checkI2CDevice(TwoWire &wireBus, uint8_t address);
 void refreshAllSensors();
 bool calibrateGyroBiasZ(unsigned long calibrationMs);
 
+void startRampWallFollowing();
+int updateRampWallFollowing(bool trackLeftWall);
 void setup() {
   Serial.begin(115200);
   while (!Serial) { delay(10); } 
@@ -215,6 +217,11 @@ void loop() {
         Serial.println("PLANTING SEQUENCE");
         startPlanting(); 
         currentState = STATE_PLANTING; 
+      }
+      else if (cmd == 'r' || cmd == 'R') {
+        Serial.println("RAMP");
+        startRampWallFollowing(); 
+        currentState = STATE_RAMP; 
       }
   }
 
@@ -398,8 +405,28 @@ void loop() {
       delay(5000);
       break;
     case STATE_BASE_NAVIGATION:
-    case STATE_RAMP:
-    
+
+    case STATE_RAMP: {
+      // Returns 1 when it successfully crosses the RFID scanner
+      if (updateRampWallFollowing(true) == 1) { 
+        Serial.println("SUCCESS: Cleared the ramp and entered the arena!");
+        
+        Coordinate truePosition;// = getCoordinateFromRFID(sensors.rfidInfo);
+        truePosition.x = 0;
+        truePosition.y = 3; //hard coded airlock coordinates
+        if (truePosition.x != -1 && truePosition.y != -1) {
+          robotInfo.currentPos = truePosition;
+          Serial.print("[RAMP EXIT] Synced to: (X:");
+          Serial.print(robotInfo.currentPos.x); Serial.print(", Y:");
+          Serial.print(robotInfo.currentPos.y); Serial.println(")");
+        }
+
+        snapYawToGrid(); 
+        newPathNeeded = true;
+        currentState = STATE_PLAN; 
+      }
+      break;
+    }
 
     //case STATE_ALIGN_SEED: might not need because we are aligning anyway at every step
 

@@ -2,6 +2,9 @@
 // Navigation.ino - Line + RFID Node Navigation
 // ============================================================
 
+
+
+
 volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
 
@@ -488,4 +491,110 @@ bool updatePostPlantAdvance() {
   }
 
   return false;
+}
+
+
+// Ramp Wall Following with distance sensors + front distance sensors for stopping
+
+static bool rampInitialized = false;
+static float wallLastError = 0;
+static float speedIntegral = 0;
+static unsigned long lastWallMicros = 0;
+static long lastAvgEncoderCount = 0;
+
+void startRampWallFollowing() {
+  Serial.println("[RAMP] Initializing Wall Follower & Clearing Memory...");
+  wallLastError = 0;
+  speedIntegral = 0;
+  resetSegmentEncoders();
+  lastAvgEncoderCount = 0;
+  lastWallMicros = micros();
+  rampInitialized = true;
+}
+
+// Returns 1 if RFID reached, 0 if still driving/waiting
+int updateRampWallFollowing(bool trackLeftWall) {
+  
+  // initialise
+  if (!rampInitialized || (micros() - lastWallMicros > 200000)) {
+    startRampWallFollowing();
+  }
+
+  // check for rfid to finish
+  if (sensors.rfidInfo != 0) {
+    stopMotors();
+    rampInitialized = false; // Reset for next time
+    return 1; // Signal completion to Main loop
+  }
+
+
+  unsigned long currentMicros = micros();
+  if (currentMicros - lastWallMicros < 1000) return 0;
+  float dt = (currentMicros - lastWallMicros) / 1000000.0;
+  lastWallMicros = currentMicros;
+
+  // TAILGATING / stopping
+  float dynamicTargetSpeed = TARGET_ENCODER_SPEED; 
+
+  if (sensors.tof_front > 0) {
+    if (sensors.tof_front < FRONT_COLLISION_DIST_MM) {
+      stopMotors();
+      speedIntegral = 0; 
+      lastAvgEncoderCount = getAverageEncoderCounts(); 
+      
+      static unsigned long lastWaitPrint = 0;
+      if (millis() - lastWaitPrint > 1000) {
+        Serial.println("[RAMP] Obstacle critically close. Holding position...");
+        lastWaitPrint = millis();
+      }
+      return 0; // Stay parked
+    } 
+    else if (sensors.tof_front < TAILGATE_START_DIST_MM) {
+      float distanceRatio = (float)(sensors.tof_front - FRONT_COLLISION_DIST_MM) / 
+                            (float)(TAILGATE_START_DIST_MM - FRONT_COLLISION_DIST_MM);
+      dynamicTargetSpeed = TARGET_ENCODER_SPEED * distanceRatio;
+      if (dynamicTargetSpeed < 250.0) dynamicTargetSpeed = 250.0; 
+    }
+  }
+
+  // TORQUE
+  long currentCounts = getAverageEncoderCounts();
+  float currentSpeed = (currentCounts - lastAvgEncoderCount) / dt;
+  lastAvgEncoderCount = currentCounts;
+
+  float speedError = dynamicTargetSpeed - currentSpeed;
+  speedIntegral += speedError * dt;
+  
+  if (speedIntegral > 300) speedIntegral = 300;
+  if (speedIntegral < -300) speedIntegral = -300;
+
+  int basePWM = (int)(speedError * speedKp + speedIntegral * speedKi);
+  if (basePWM < 150) basePWM = 150; 
+  if (basePWM > RAMP_MAX_PWM) basePWM = RAMP_MAX_PWM;
+
+  // STEERING 
+  int currentWallDist = trackLeftWall ? sensors.tof_left : sensors.tof_right1;
+  int correction = 0;
+  
+  if (currentWallDist > 0 && currentWallDist < 600) {
+    float error = TARGET_WALL_DIST_MM - currentWallDist;
+    float derivative = (error - wallLastError) / dt;
+    wallLastError = error;
+
+    correction = (int)(wallKp * error + wallKd * derivative);
+    correction = constrain(correction, -WALL_MAX_CORRECTION, WALL_MAX_CORRECTION);
+  }
+
+
+  int leftSpeed = basePWM + correction;
+  int rightSpeed = basePWM - correction;
+
+
+  if (!trackLeftWall) {
+     leftSpeed = basePWM - correction;
+     rightSpeed = basePWM + correction;
+  }
+
+  driveMotors(leftSpeed, rightSpeed);
+  return 0; // Still driving
 }
