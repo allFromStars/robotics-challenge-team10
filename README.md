@@ -19,6 +19,13 @@ Task 3: Solid Grid Navigation
 
 
 
+Task 4: Open field dead-reckoning 
+<img width="1346" height="3373" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (5)" src="https://github.com/user-attachments/assets/dee4b6a6-6ce4-47d0-ae34-2b3cdadd00b2" />
+
+
+
+
+
 
 
 Task 5: Ramped incline/decline control
