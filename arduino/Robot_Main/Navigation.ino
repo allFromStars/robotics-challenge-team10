@@ -31,27 +31,6 @@ long getAverageEncoderCounts() {
 }
 
 
-const int GRID_LINE_SPEED = 220;
-const int AFTER_RFID_SLOW_SPEED = 150;
-const int REACQUIRE_SPEED = 150;
-const int MAX_SPEED = 360;
-
-float lineKp = 0.040;
-float lineKd = 0.10;
-float headingKp = 4.0;
-const int HEADING_MAX_CORRECTION = 70;
-
-const long MIN_COUNTS_BEFORE_NODE_CANDIDATE = 250;
-const unsigned long NODE_RFID_CONFIRM_TIMEOUT_MS = 1200;
-const unsigned long RFID_TO_HOLE_TIMEOUT_MS = 1800;
-const unsigned long NODE_PAUSE_MS = 600;
-const unsigned long REACQUIRE_AFTER_NODE_TIMEOUT_MS = 1800;
-const unsigned long LINE_NAV_TIMEOUT_MS = 45000;
-
-const int LINE_CENTER = 4000;
-const uint16_t LINE_THRESHOLD = 400;
-const uint16_t LINE_TOTAL_THRESHOLD = 300;
-
 uint16_t lastLinePosition = LINE_CENTER;
 int lastError = 0;
 int activeSensorCount = 0;
@@ -67,14 +46,16 @@ unsigned long pendingNodeTagSeenMs = 0;
 
 // --- State Machine Enum ---
 enum Task3LineState {
-  T3_LINE_IDLE, T3_LINE_FOLLOW, T3_NODE_CANDIDATE,
-  T3_NODE_CONFIRMED_PAUSE, T3_REACQUIRE_AFTER_NODE,
+  T3_LINE_IDLE, T3_LEAVE_START_NODE, T3_LINE_FOLLOW, T3_NODE_CANDIDATE,
+  T3_NODE_CONFIRMED_PAUSE, T3_ADVANCE_TO_TURN_CENTER, T3_REACQUIRE_AFTER_NODE,
   T3_LINE_DONE, T3_LINE_FAILSAFE
 };
 Task3LineState task3LineState = T3_LINE_IDLE;
 unsigned long taskStartMs = 0, nodeCandidateStartMs = 0;
-unsigned long nodePauseStartMs = 0, reacquireStartMs = 0;
+unsigned long nodePauseStartMs = 0, nodeAdvanceStartMs = 0, reacquireStartMs = 0;
 float continueHeadingDeg = 0.0;
+LineArrivalMode lineArrivalMode = LINE_ARRIVE_FOR_TURN;
+const char* task3FailureReason = "";
 
 
 
@@ -84,7 +65,7 @@ bool nodeCandidateAllowed() {
 
 int clampMagnitude(int speed) {
   if (speed < 0) return 0;
-  if (speed > MAX_SPEED) return MAX_SPEED;
+  if (speed > LINE_NAV_MAX_SPEED) return LINE_NAV_MAX_SPEED;
   return speed;
 }
 
@@ -148,11 +129,15 @@ void followGridLinePD(int baseSpeed) {
   lastError = error;
 }
 
-void driveForwardWithHeadingHold(float targetHeadingDeg, int baseSpeed) {
+void driveForwardWithHeadingHold(float targetHeadingDeg, int baseSpeed, float kp, int maxCorrection) {
   float error = headingErrorDeg(targetHeadingDeg, sensors.yaw); 
-  int correction = constrain((int)(headingKp * error), -HEADING_MAX_CORRECTION, HEADING_MAX_CORRECTION);
+  int correction = constrain((int)(kp * error), -maxCorrection, maxCorrection);
 
   driveForwardMagnitudes(baseSpeed - correction, baseSpeed + correction);
+}
+
+void driveForwardWithHeadingHold(float targetHeadingDeg, int baseSpeed) {
+  driveForwardWithHeadingHold(targetHeadingDeg, baseSpeed, headingKp, HEADING_MAX_CORRECTION);
 }
 
 
@@ -168,6 +153,7 @@ void updateTask3LineNavigation() {
   if (taskStartMs > 0 && millis() - taskStartMs > LINE_NAV_TIMEOUT_MS && 
       task3LineState != T3_LINE_IDLE && task3LineState != T3_LINE_DONE && task3LineState != T3_LINE_FAILSAFE) {
     stopMotors();
+    task3FailureReason = "line navigation timeout";
     task3LineState = T3_LINE_FAILSAFE;
     Serial.println("Line navigation TIMEOUT");
     return;
@@ -177,6 +163,20 @@ void updateTask3LineNavigation() {
   switch (task3LineState) {
     case T3_LINE_IDLE:
       stopMotors();
+      break;
+
+    case T3_LEAVE_START_NODE:
+      if (lineDetected) {
+        lastError = 0;
+        resetSegmentEncoders();
+        task3LineState = T3_LINE_FOLLOW;
+      } else {
+        driveForwardWithHeadingHold(continueHeadingDeg, REACQUIRE_SPEED);
+        if (millis() - reacquireStartMs > START_NODE_EXIT_TIMEOUT_MS) {
+          task3FailureReason = "could not find line after leaving start node";
+          task3LineState = T3_LINE_FAILSAFE;
+        }
+      }
       break;
 
     case T3_LINE_FOLLOW:
@@ -207,8 +207,9 @@ void updateTask3LineNavigation() {
                 task3LineState = T3_NODE_CANDIDATE;
             }
         } else {
-          stopMotors();
-          task3LineState = T3_LINE_FAILSAFE;
+          continueHeadingDeg = sensors.yaw;
+          reacquireStartMs = millis();
+          task3LineState = T3_REACQUIRE_AFTER_NODE;
         }
         break;
       }
@@ -226,15 +227,39 @@ void updateTask3LineNavigation() {
       } else if (lineDetected) {
         lastError = 0;
         task3LineState = T3_LINE_FOLLOW;
-      } else if (millis() - nodeCandidateStartMs > NODE_RFID_CONFIRM_TIMEOUT_MS) {
-        task3LineState = T3_LINE_FAILSAFE;
+      } else if (millis() - nodeCandidateStartMs > NODE_CANDIDATE_CONFIRM_MS) {
+        nodePauseStartMs = millis();
+        task3LineState = T3_NODE_CONFIRMED_PAUSE;
       }
       break;
 
     case T3_NODE_CONFIRMED_PAUSE:
       stopMotors();
       if (millis() - nodePauseStartMs >= NODE_PAUSE_MS) {
-        // One confirmed node completes the move requested by STATE_PLAN.
+        if (lineArrivalMode == LINE_ARRIVE_FOR_PLANTING) {
+          task3LineState = T3_LINE_DONE;
+        } else {
+          resetSegmentEncoders();
+          nodeAdvanceStartMs = millis();
+          task3LineState = T3_ADVANCE_TO_TURN_CENTER;
+        }
+      }
+      break;
+
+    case T3_ADVANCE_TO_TURN_CENTER:
+      if (lineDetected) {
+        followGridLinePD(TURN_CENTER_ADVANCE_SPEED);
+      } else {
+        lastError = 0;
+        driveForwardWithHeadingHold(continueHeadingDeg, TURN_CENTER_ADVANCE_SPEED);
+      }
+
+      if (getAverageEncoderCounts() >= TURN_CENTER_ADVANCE_COUNTS) {
+        stopMotors();
+        task3LineState = T3_LINE_DONE;
+      } else if (millis() - nodeAdvanceStartMs > TURN_CENTER_ADVANCE_TIMEOUT_MS) {
+        stopMotors();
+        Serial.println("Turn-center advance timeout; continuing to plan.");
         task3LineState = T3_LINE_DONE;
       }
       break;
@@ -242,10 +267,14 @@ void updateTask3LineNavigation() {
     case T3_REACQUIRE_AFTER_NODE:
       if (lineDetected) {
         lastError = 0;
+        resetSegmentEncoders();
         task3LineState = T3_LINE_FOLLOW;
       } else {
         driveForwardWithHeadingHold(continueHeadingDeg, REACQUIRE_SPEED);
-        if (millis() - reacquireStartMs > REACQUIRE_AFTER_NODE_TIMEOUT_MS) task3LineState = T3_LINE_FAILSAFE;
+        if (millis() - reacquireStartMs > REACQUIRE_AFTER_NODE_TIMEOUT_MS) {
+          task3FailureReason = "could not reacquire line";
+          task3LineState = T3_LINE_FAILSAFE;
+        }
       }
       break;
 
@@ -257,14 +286,19 @@ void updateTask3LineNavigation() {
 }
 
 
-void startTask3LineNavigation() {
+void startTask3LineNavigation(LineArrivalMode arrivalMode) {
   taskStartMs = millis();
   pendingNodeTag = false;
   lastError = 0;
+  lineArrivalMode = arrivalMode;
   continueHeadingDeg = sensors.yaw;
   reacquireStartMs = millis();
   resetSegmentEncoders();
-  task3LineState = T3_REACQUIRE_AFTER_NODE;
+  task3LineState = T3_LEAVE_START_NODE;
+}
+
+void startTask3LineNavigation() {
+  startTask3LineNavigation(LINE_ARRIVE_FOR_TURN);
 }
 
 
@@ -274,4 +308,184 @@ bool task3LineNavigationComplete() {
 
 bool task3LineNavigationFailed() {
   return task3LineState == T3_LINE_FAILSAFE;
+}
+
+const char* getTask3LineNavigationFailureReason() {
+  return task3FailureReason;
+}
+
+// ============================================================
+// Task 4 - Open-field one-edge navigation
+// ============================================================
+
+enum Task4OpenState {
+  T4_OPEN_IDLE,
+  T4_OPEN_DRIVE_EDGE,
+  T4_OPEN_SEARCH_NODE,
+  T4_OPEN_NODE_PAUSE,
+  T4_OPEN_DONE,
+  T4_OPEN_FAILSAFE
+};
+
+Task4OpenState task4OpenState = T4_OPEN_IDLE;
+
+unsigned long openTaskStartMs = 0;
+unsigned long openSearchStartMs = 0;
+unsigned long openNodePauseStartMs = 0;
+float openTargetHeadingDeg = 0.0;
+uint32_t openConfirmedTagId = 0;
+
+bool nearExpectedOpenNode() {
+  long searchStartCounts = OPEN_GRID_EDGE_COUNTS - OPEN_NODE_SEARCH_WINDOW_COUNTS;
+
+  if (searchStartCounts < 0) {
+    searchStartCounts = 0;
+  }
+
+  return getAverageEncoderCounts() >= searchStartCounts;
+}
+
+bool openEdgeDistanceReached() {
+  return getAverageEncoderCounts() >= OPEN_GRID_EDGE_COUNTS;
+}
+
+void driveOpenWithHeadingHold(int baseSpeed) {
+  driveForwardWithHeadingHold(
+    openTargetHeadingDeg,
+    baseSpeed,
+    OPEN_HEADING_KP,
+    OPEN_HEADING_MAX_CORRECTION
+  );
+}
+
+void startTask4OpenNavigation() {
+  openTaskStartMs = millis();
+  openSearchStartMs = 0;
+  openNodePauseStartMs = 0;
+  openTargetHeadingDeg = sensors.yaw;
+  openConfirmedTagId = 0;
+  resetSegmentEncoders();
+  task4OpenState = T4_OPEN_DRIVE_EDGE;
+
+  Serial.print("Task 4 open edge start. targetHeading=");
+  Serial.println(openTargetHeadingDeg, 1);
+}
+
+void updateTask4OpenNavigation() {
+  bool tagDetected = sensors.rfidInfo != 0;
+
+  if (openTaskStartMs > 0 &&
+      millis() - openTaskStartMs > OPEN_EDGE_TIMEOUT_MS &&
+      task4OpenState != T4_OPEN_IDLE &&
+      task4OpenState != T4_OPEN_DONE &&
+      task4OpenState != T4_OPEN_FAILSAFE) {
+    stopMotors();
+    task4OpenState = T4_OPEN_FAILSAFE;
+    Serial.println("Open navigation TIMEOUT");
+    return;
+  }
+
+  switch (task4OpenState) {
+    case T4_OPEN_IDLE:
+      stopMotors();
+      break;
+
+    case T4_OPEN_DRIVE_EDGE:
+      if (nearExpectedOpenNode()) {
+        openSearchStartMs = millis();
+        task4OpenState = T4_OPEN_SEARCH_NODE;
+        Serial.println("Open edge near target. Searching for RFID node.");
+        break;
+      }
+
+      driveOpenWithHeadingHold(OPEN_FIELD_SPEED);
+      break;
+
+    case T4_OPEN_SEARCH_NODE:
+      if (tagDetected) {
+        openConfirmedTagId = sensors.rfidInfo;
+        openNodePauseStartMs = millis();
+        stopMotors();
+
+        Serial.print("Open node RFID confirmed: 0x");
+        Serial.println(openConfirmedTagId, HEX);
+
+        task4OpenState = T4_OPEN_NODE_PAUSE;
+        break;
+      }
+
+      if (millis() - openSearchStartMs > OPEN_NODE_SEARCH_TIMEOUT_MS) {
+        stopMotors();
+        task4OpenState = T4_OPEN_FAILSAFE;
+        Serial.println("Open navigation failed: RFID node not found near target");
+        break;
+      }
+
+      driveOpenWithHeadingHold(OPEN_SEARCH_SPEED);
+      break;
+
+    case T4_OPEN_NODE_PAUSE:
+      stopMotors();
+
+      if (millis() - openNodePauseStartMs >= OPEN_NODE_PAUSE_MS) {
+        task4OpenState = T4_OPEN_DONE;
+      }
+      break;
+
+    case T4_OPEN_DONE:
+    case T4_OPEN_FAILSAFE:
+      stopMotors();
+      break;
+  }
+}
+
+bool task4OpenNavigationComplete() {
+  return task4OpenState == T4_OPEN_DONE;
+}
+
+bool task4OpenNavigationFailed() {
+  return task4OpenState == T4_OPEN_FAILSAFE;
+}
+
+// ============================================================
+// Post-planting advance
+// ============================================================
+
+bool postPlantAdvanceActive = false;
+unsigned long postPlantAdvanceStartMs = 0;
+float postPlantAdvanceHeadingDeg = 0.0;
+
+void startPostPlantAdvance() {
+  postPlantAdvanceActive = true;
+  postPlantAdvanceStartMs = millis();
+  postPlantAdvanceHeadingDeg = sensors.yaw;
+  resetSegmentEncoders();
+}
+
+bool updatePostPlantAdvance() {
+  if (!postPlantAdvanceActive) return true;
+
+  processLinePosition();
+
+  if (lineDetected) {
+    followGridLinePD(POST_PLANT_ADVANCE_SPEED);
+  } else {
+    lastError = 0;
+    driveForwardWithHeadingHold(postPlantAdvanceHeadingDeg, POST_PLANT_ADVANCE_SPEED);
+  }
+
+  if (getAverageEncoderCounts() >= POST_PLANT_ADVANCE_COUNTS) {
+    stopMotors();
+    postPlantAdvanceActive = false;
+    return true;
+  }
+
+  if (millis() - postPlantAdvanceStartMs > POST_PLANT_ADVANCE_TIMEOUT_MS) {
+    stopMotors();
+    postPlantAdvanceActive = false;
+    Serial.println("Post-plant advance timeout; continuing to plan.");
+    return true;
+  }
+
+  return false;
 }

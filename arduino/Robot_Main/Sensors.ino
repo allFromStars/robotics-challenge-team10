@@ -11,6 +11,7 @@ void readAllTOF();
 void readIR();
 void CheckRFID();
 void readIMU();
+bool calibrateGyroBiasZ(unsigned long calibrationMs);
 
 bool checkI2CDevice(TwoWire &wireBus, uint8_t address) {
   wireBus.beginTransmission(address);
@@ -27,11 +28,22 @@ bool initIMU() {
     return false;
   }
 
-  // callibration
-  Serial.println("Calibrating IMU...");
+  if (!calibrateGyroBiasZ(2000)) {
+    return false;
+  }
+  
+  sensors.yaw = 0.0;
+  lastTimeMicros = micros();
+  return true;
+}
+
+bool calibrateGyroBiasZ(unsigned long calibrationMs) {
+  Serial.println("Calibrating IMU gyro bias...");
+  gyroBiasZ = 0.0;
+
   int samples = 0;
   unsigned long timeoutAnchor = millis();
-  while(samples < 1000 && (millis() - timeoutAnchor < 2000)) {
+  while (millis() - timeoutAnchor < calibrationMs) {
     if (myICM.dataReady()) {
       myICM.getAGMT();
       gyroBiasZ += myICM.gyrZ();
@@ -40,13 +52,20 @@ bool initIMU() {
     delay(1);
   }
   
-  if (samples >= 1000) {
-    gyroBiasZ /= 1000.0;
-  } else {
-    gyroBiasZ = 0.0; 
+  if (samples == 0) {
+    gyroBiasZ = 0.0;
+    Serial.println("IMU gyro bias calibration failed: no samples.");
+    return false;
   }
+
+  gyroBiasZ /= (float)samples;
   
-  sensors.yaw = 0.0;
+  Serial.print("IMU gyro bias Z: ");
+  Serial.print(gyroBiasZ, 4);
+  Serial.print(" dps from ");
+  Serial.print(samples);
+  Serial.println(" samples");
+
   lastTimeMicros = micros();
   return true;
 }
@@ -194,10 +213,6 @@ void CheckRFID() {
 }
 
 float getHeadingDegrees() {
-  if (myICM.dataReady()) {
-    myICM.getAGMT();
-  }
-
   float magX = myICM.magX();
   float magY = myICM.magY();
 

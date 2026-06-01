@@ -61,6 +61,7 @@ enum RobotState {
 
   STATE_ALIGN_SEED,         // After wanted RFID detected, creep forward and use reflectance to align itself slowly
   STATE_PLANTING,           // Paused over an RFID seed hole, activating the hopper mechanism
+  STATE_ADVANCE_AFTER_PLANTING, // Move from planting pose to turn-center pose
 
   STATE_RESCUE_MODE,        // received signal to save robot that is right infront, tap robot
   STATE_STRANDED_ALIVE,     // Stop wheels activate LED, do stranded protocol
@@ -74,6 +75,11 @@ enum RobotState {
   STATE_AIRLOCK_B,
 
   STATE_DEBUG,
+};
+
+enum LineArrivalMode {
+  LINE_ARRIVE_FOR_TURN,
+  LINE_ARRIVE_FOR_PLANTING
 };
 
 #endif

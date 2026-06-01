@@ -73,8 +73,8 @@ INFO robotInfo;
 
 const int TOTAL_SEED_TARGETS = 5; 
 Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
-  {2, 2}, // Target 1
-  {2, 4}, // Target 2
+  {0, 2}, // Target 1
+  {0, 1}, // Target 2
   {4, 4}, // Target 3
   {4, 6}, // Target 4
   {6, 6}  // Target 5
@@ -89,6 +89,7 @@ bool initSensors();
 bool initMotors();
 bool checkI2CDevice(TwoWire &wireBus, uint8_t address);
 void refreshAllSensors();
+bool calibrateGyroBiasZ(unsigned long calibrationMs);
 
 void setup() {
   Serial.begin(115200);
@@ -186,6 +187,10 @@ void loop() {
       char cmd = Serial.read();
       
       if (cmd == 'g' || cmd == 'G') {
+        stopMotors();
+        calibrateGyroBiasZ(1000);
+        sensors.yaw = 0.0;
+        lastTimeMicros = micros();
         newPathNeeded = true;
         currentState = STATE_PLAN;
         Serial.println("--- Starting Mission Plan ---");
@@ -299,20 +304,34 @@ void loop() {
       if (task3LineNavigationComplete()) {
         Serial.println("SUCCESS: Reached next node!");
         robotInfo.currentPos = robotInfo.getNextNode(); // Update Map Memory
-        snapYawToGrid();                                // EXPERIMENTAL round the gyro reading to snap to nearest 90 degrees while we are navigating grid lines
+        //YawToGrid();                                // EXPERIMENTAL round the gyro reading to snap to nearest 90 degrees while we are navigating grid lines
          
         currentState = STATE_PLAN; 
 
       } 
       else if (task3LineNavigationFailed()) {
          Serial.println("ERROR: Failsafe triggered (Lost line or timeout).");
+         Serial.print("Task 3 failure reason: ");
+         Serial.println(getTask3LineNavigationFailureReason());
          currentState = STATE_EMERGENCY_STOP; 
+         // currentState = STATE_PLAN;
       }
       break;
     }
     case STATE_NAVIGATING_OPEN: 
-      Serial.println("Can't navigate open yet");
-      currentState = STATE_EMERGENCY_STOP;
+      updateTask4OpenNavigation();
+
+      if (task4OpenNavigationComplete()) {
+        Serial.println("SUCCESS: Reached next open-field node!");
+        robotInfo.currentPos = robotInfo.getNextNode();
+        snapYawToGrid();
+        currentState = STATE_PLAN;
+      }
+      else if (task4OpenNavigationFailed()) {
+        Serial.println("ERROR: Open-field navigation failed.");
+        currentState = STATE_EMERGENCY_STOP;
+      }
+      
       break;
 
     
@@ -340,9 +359,15 @@ void loop() {
 
         byte nextTerrain = arenaMap[8 - nextNode.y][nextNode.x]; 
         if (nextTerrain == 1) {
-            startTask3LineNavigation();
+            bool arrivingForPlanting =
+              !headingToExit &&
+              nextNode.x == robotInfo.finalDestination.x &&
+              nextNode.y == robotInfo.finalDestination.y;
+
+            startTask3LineNavigation(arrivingForPlanting ? LINE_ARRIVE_FOR_PLANTING : LINE_ARRIVE_FOR_TURN);
             currentState = STATE_NAVIGATING_LINES;
         } else {
+            startTask4OpenNavigation();
             currentState = STATE_NAVIGATING_OPEN;
         }
       }
@@ -356,6 +381,12 @@ void loop() {
         Serial.print("Seeds remaining: ");
         Serial.println(robotInfo.seedsLeft);
         currentTargetIndex++; //move to next target in the list
+        startPostPlantAdvance();
+        currentState = STATE_ADVANCE_AFTER_PLANTING;
+      }
+      break;
+    case STATE_ADVANCE_AFTER_PLANTING:
+      if (updatePostPlantAdvance()) {
         newPathNeeded = true; //tell plan to calculate route
         currentState = STATE_PLAN; // Go to next target
       }
@@ -396,6 +427,3 @@ void loop() {
   }
 
 }
-
-
-
