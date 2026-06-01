@@ -22,7 +22,8 @@ Task 3: Solid Grid Navigation
 
 
 Task 5: Ramped incline/decline control
-<img width="708" height="632" alt="image" src="https://github.com/user-attachments/assets/a2c5b3c5-589d-40c0-b19e-5a3788370e73" />
+<img width="2588" height="2304" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (4)" src="https://github.com/user-attachments/assets/acffa5ba-ceba-4e3b-ba33-22e17de81b09" />
+
 
 
 
