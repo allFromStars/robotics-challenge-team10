@@ -1,6 +1,34 @@
 #ifndef ROBOT_STATE_H
 #define ROBOT_STATE_H
 
+const int GRID_WIDTH  = 9; 
+const int GRID_HEIGHT = 9;
+bool newPathNeeded;
+
+// 1 = Grid Line Area (.) -> Navigation Weight: 1
+// 2 = Open Field Area (-) -> Navigation Weight: 2 * Multiplier
+// 3 = Solid Obstacle  (X) -> Impassable Wall
+
+byte arenaMap[GRID_HEIGHT][GRID_WIDTH] = {
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, // Y = 8 (Top Row of Grid)
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, // Y = 7
+  {1, 1, 1, 3, 3, 3, 2, 2, 2}, // Y = 6 (Horizontal Obstacle Wall)
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, // Y = 5
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, // Y = 4
+  {1, 1, 1, 3, 2, 2, 2, 2, 2}, // Y = 3 (Vertical Obstacle Block)
+  {1, 1, 1, 3, 2, 2, 2, 2, 2}, // Y = 2 (Vertical Obstacle Block)
+  {1, 1, 1, 1, 2, 2, 2, 2, 2}, // Y = 1
+  {1, 1, 1, 1, 2, 2, 2, 2, 2}  // Y = 0 (Bottom Row of Grid)
+};
+
+// STANDARD MATH TRACKING VECTORS
+// Index 0: Move NORTH ↑ (X stays same, Y increases by 1)
+// Index 1: Move EAST  → (X increases by 1, Y stays same)
+// Index 2: Move SOUTH ↓ (X stays same, Y decreases by 1)
+// Index 3: Move WEST  ← (X decreases by 1, Y stays same)
+const int dx[] = {0, 1, 0, -1};
+const int dy[] = {1, 0, -1, 0};
+
 /* enum RobotState {
   STATE_STANDBY_BASE,       // Parked at base waiting for start cue
   STATE_LINE_FOLLOWING_B,     // Tracking line in base
@@ -42,8 +70,10 @@ enum RobotState {
 
   STATE_EXIT_ARENA,
 
+  STATE_ALIGN_AIRLOCK_B,     //rotate toward airlock
   STATE_AIRLOCK_B,
 
   STATE_DEBUG,
 };
+
 #endif

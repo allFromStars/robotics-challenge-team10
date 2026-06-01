@@ -10,6 +10,8 @@ bool debugIRMode = false;
 
 RobotState currentState = STATE_DEBUG; 
 
+
+
 bool imuOnline   = false;
 bool motorOnline = false;
 bool rfidOnline  = false;
@@ -55,10 +57,32 @@ struct Coordinate {
 
 struct INFO {
   int seedsLeft;
-  Coordinate currentPos;  
-  Coordinate destination;
+  Coordinate currentPos;       // 'R' on the map
+  Coordinate finalDestination;  // 'T' on the map
+  Coordinate waypoints[30];    // '*' on the map
+  int totalWaypoints;
+  int currentWaypointIdx;
+  Coordinate getNextNode() {
+    if (currentWaypointIdx < totalWaypoints) {
+      return waypoints[currentWaypointIdx];
+    }
+    return finalDestination; 
+  }
 };
 INFO robotInfo;
+
+const int TOTAL_SEED_TARGETS = 5; 
+Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
+  {2, 2}, // Target 1
+  {2, 4}, // Target 2
+  {4, 4}, // Target 3
+  {4, 6}, // Target 4
+  {6, 6}  // Target 5
+};
+
+int currentTargetIndex = 0; 
+bool headingToExit = false; 
+const float AIRLOCK_HEADING = -90;
 
 
 bool initSensors();
@@ -143,9 +167,10 @@ void setup() {
   robotInfo.currentPos.y = START_Y;
   
 
-  robotInfo.destination.x = DEFAULT_DESTINATION_X;
-  robotInfo.destination.y = DEFAULT_DESTINATION_Y;
+  robotInfo.finalDestination.x = DEFAULT_DESTINATION_X;
+  robotInfo.finalDestination.y = DEFAULT_DESTINATION_Y;
   
+  robotInfo.finalDestination = seedTargets[0]; // Load the first target from the list!
 
 
 }
@@ -189,6 +214,63 @@ void loop() {
 
   switch (currentState) {
 
+    case STATE_PLAN: {
+      printVisualMap();
+
+      // check if we have finished
+      if (currentTargetIndex >= TOTAL_SEED_TARGETS || robotInfo.seedsLeft <= 0) {
+        if (!headingToExit) {
+          Serial.println("Mission Complete or Out of Seeds! Locking Exit Coordinate.");
+          headingToExit = true;                // finished
+          robotInfo.finalDestination = {0, 7}; // airlock exit coords
+          newPathNeeded = true;
+        }
+      } else {
+        // Load the next target from the list
+        robotInfo.finalDestination = seedTargets[currentTargetIndex]; 
+      }
+
+      // check if current position is destination
+      if (robotInfo.currentPos.x == robotInfo.finalDestination.x && robotInfo.currentPos.y == robotInfo.finalDestination.y) {
+        
+        // check if we are heading for exit or planting
+        if (headingToExit) {
+          Serial.println("Arrived at the Exit Airlock. Initiating exit Sequence...");
+          
+          // Calculate the turn to face the correct way for the airlock
+          float turnAngle = AIRLOCK_HEADING - sensors.yaw;
+          startTurnAngle(turnAngle);
+          
+          currentState = STATE_ALIGN_AIRLOCK_B;
+          
+        } else {
+          Serial.println("Target reached! Deploying Planter...");
+          startPlanting();
+          currentState = STATE_PLANTING; 
+        }
+        break; 
+      }
+
+      // if new path is required, calculate, if not increment waypoint
+      if (newPathNeeded) {
+        calculateWeightedPath();
+        robotInfo.currentWaypointIdx = 0;
+        newPathNeeded = false;
+      } else {
+        robotInfo.currentWaypointIdx += 1;
+      }
+
+      // pass over to turn
+      Coordinate nextNode = robotInfo.getNextNode(); 
+      float targetHeading = getTargetHeading(robotInfo.currentPos, nextNode);
+      float turnAngle = targetHeading - sensors.yaw;
+      
+      startTurnAngle(turnAngle); 
+      currentState = STATE_TURN;
+      break;
+    }
+
+
     case STATE_STANDBY_BASE:
       stopMotors();
       break;
@@ -205,35 +287,61 @@ void loop() {
       break;
 
 
-    case STATE_NAVIGATING_LINES:
-
+    case STATE_NAVIGATING_LINES: {
       updateTask3LineNavigation(); 
 
       if (task3LineNavigationComplete()) {
-         Serial.println("SUCCESS: Reached target nodes!");
-         currentState = STATE_STANDBY_BASE; 
+        Serial.println("SUCCESS: Reached target nodes!");
+        robotInfo.currentPos = robotInfo.getNextNode(); // Update Map Memory
+        snapYawToGrid();                                // EXPERIMENTAL round the gyro reading to snap to nearest 90 degrees while we are navigating grid lines
+         
+        currentState = STATE_PLAN; 
+
       } 
       else if (task3LineNavigationFailed()) {
          Serial.println("ERROR: Failsafe triggered (Lost line or timeout).");
          currentState = STATE_EMERGENCY_STOP; 
       }
       break;
-
-    case STATE_EMERGENCY_STOP:
-      stopMotors();
-      abortPlanting();
-
+    }
+    case STATE_NAVIGATING_OPEN: 
+      Serial.println("Can't navigate open yet");
+      currentState = STATE_EMERGENCY_STOP;
       break;
 
-    case STATE_DEBUG:
-      DebugSensors();
-      break;
+    
+    case STATE_TURN:{
+      Coordinate nextNode = robotInfo.getNextNode();
 
-    case STATE_TURN:
       if (updateTurnAngle()) {
-          // Turn is complete! Transition to next state...
+
+        const int OBSTACLE_THRESHOLD_MM = 250;
+        refreshAllSensors();
+
+        if (sensors.tof_front < OBSTACLE_THRESHOLD_MM && sensors.tof_front > 0) {
+            Serial.print("OBSTACLE DETECTED at distance: ");
+            Serial.println(sensors.tof_front);
+            
+            // Mark the target node as an impassable wall (3) in the digital map
+            arenaMap[8 - nextNode.y][nextNode.x] = 3; 
+            
+            // Tell the brain to map a new route from safe spot
+            newPathNeeded = true;
+            currentState = STATE_PLAN;
+            
+            break; // Break out immediately so we don't start driving!
         }
+
+        byte nextTerrain = arenaMap[8 - nextNode.y][nextNode.x]; 
+        if (nextTerrain == 1) {
+            startTask3LineNavigation();
+            currentState = STATE_NAVIGATING_LINES;
+        } else {
+            currentState = STATE_NAVIGATING_OPEN;
+        }
+      }
       break;
+    }
     case STATE_PLANTING:
       // call update planting after initial call
       if (updatePlanting()) {
@@ -241,35 +349,46 @@ void loop() {
         // Seed count is decreased inside of seed function in Hardware.ino
         Serial.print("Seeds remaining: ");
         Serial.println(robotInfo.seedsLeft);
+        currentTargetIndex++; //move to next target in the list
+        newPathNeeded = true; //tell plan to calculate route
         currentState = STATE_PLAN; // Go to next target
       }
       break;
-
+    case STATE_EMERGENCY_STOP:
+      stopMotors();
+      abortPlanting();
+      Serial.println("Emergency Stop");
+      delay(5000);
+      break;
     case STATE_BASE_NAVIGATION:
     case STATE_RAMP:
-    case STATE_PLAN:
+    
 
     //case STATE_ALIGN_SEED: might not need because we are aligning anyway at every step
 
     case STATE_STRANDED_ALIVE:
     case STATE_REVIVED_RETURN:
     case STATE_EXIT_ARENA:
+    case STATE_ALIGN_AIRLOCK_B:  //finish rotating towards airlock
+      if (updateTurnAngle()) {
+        Serial.println("Safely parked in the airlock!");
+        currentState = STATE_AIRLOCK_B; 
+      }
+      break;
+
     case STATE_AIRLOCK_B:
       stopMotors(); 
+      break;
+
+    case STATE_DEBUG:
+      DebugSensors();
       break;
 
     default:
       stopMotors();
       break;
   }
-  /*
-    // run serial 4 times per sec
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 250) {
-    lastPrint = millis();
 
-  }
-  */
 }
 
 

@@ -221,6 +221,21 @@ float getHeadingDegrees() {
   return headingDegrees;
 }
 
+void snapYawToGrid() { //for correcting gyro drift
+
+  // Example: 86.4 / 90 = 0.96 -> rounds to 1.0 -> 1.0 * 90 = 90.0
+  // Example: 4.2 / 90 = 0.04 -> rounds to 0.0 -> 0.0 * 90 = 0.0
+  
+  float snappedYaw = round(sensors.yaw / 90.0) * 90.0;
+  
+
+  
+  Serial.print("--- GYRO DRIFT CORRECTED --- ");
+  Serial.print("Old Yaw: "); Serial.print(sensors.yaw);
+  Serial.print(" | Snapped Yaw: "); Serial.println(snappedYaw);
+  
+  sensors.yaw = snappedYaw;
+}
 
 void DebugSensors() {
   refreshAllSensors();

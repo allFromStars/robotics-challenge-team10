@@ -79,7 +79,6 @@ bool updateTurnAngle() {
   
 
   if (currentMicros - lastPidMicros < 1000) return false; 
-  
   float dt = (currentMicros - lastPidMicros) / 1000000.0;
   lastPidMicros = currentMicros;
 
