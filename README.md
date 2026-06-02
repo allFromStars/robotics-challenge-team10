@@ -18,9 +18,34 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
 
 The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
 
-### Master State Machine
+
+### Core State Machine
+
+The primary operational logic of the platform is partitioned into three key state categories within the control loop execution tree:
+
+#### 1. Mission Logic & Navigation Control
+| State Identifier | System Behavior | Mission Context |
+| :--- | :--- | :--- |
+| `STATE_PLAN` | **Decision Hub:** Polls coordinates, executes the Dijkstra pathfinding routing array, and updates the next sub-target node. | Core Decision Engine |
+| `STATE_NAVIGATING_LINES` | **Guided Pathing:** Runs the primary line-tracking loop using PD error feedback arrays across guided sectors. | Navigate grid zone of arena |
+| `STATE_NAVIGATING_OPEN` | **Unguided Pathing:** Activates IMU gyroscopic heading locks and active encoder odometry calculations to navigate open field zones. | Navigate non marked area of arena |
+
+#### 2. Task-Specific Operations
+| State Identifier | System Behavior | Mission Context |
+| :--- | :--- | :--- |
+| `STATE_PLANTING` | **Payload Deployment:** Suspends motion parameters completely over a node coordinate and engages the physical servo deployment system. | Activate planting mechanism |
+| `STATE_RESCUE_MODE` | **Active Proximity Chase:** Deploys front-facing ToF linear distance scaling loops to decelerate toward a target vehicle, tracking path boundaries. | Revive another robot using bumper |
+| `STATE_REVIVED_RETURN` | **Extraction Route:** Re-initializes wheel orientations, shifts targeting registers back to home coordinates, and begins tracking base paths. | Post-Rescue Return Sequence |
+| `STATE_RAMP` | **Grade Acceleration:** Activates high-torque velocity adjustments and ultrasonic/ToF wall alignment vectors. | Navigate airlock at an incline |
+
+#### 3. Initialisation & Hardware Fail-Safes
+| State Identifier | System Behavior | Mission Context |
+| :--- | :--- | :--- |
+| `STATE_CALIBRATING_IR` | **Sensor Baseline:** Samples ambient track light values to map structural line-tracking reflection thresholds. | For calibration |
+| `STATE_EMERGENCY_STOP` | **System Inversion Lockout:** Shuts off motor control PWM lines completely, halts clock counters, and activates blink arrays if safe bounds fail. | Main Safety Overlap |
 
 ---
+
 
 ## ⚙️ Electrical Subsystem Pin Mapping
 
