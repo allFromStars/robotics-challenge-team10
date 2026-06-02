@@ -26,6 +26,20 @@ const char BOARD_ID[] = "Igor10";
 const unsigned long WIFI_REGISTER_INTERVAL_MS = 10000;
 const unsigned long WIFI_HEARTBEAT_TIMEOUT_MS = 1000;
 
+// MODE SWITCH: WiFi safety gate
+// false = local movement testing; the robot can move with only the mechanical
+// switch enabled, even if WiFi/MQTT heartbeat is not working.
+// true = competition/server mode; movement requires server heartbeat plus the
+// mechanical switch, and heartbeat timeout triggers emergency stop.
+const bool REQUIRE_WIFI_SAFETY = false;
+
+// MODE SWITCH: Server API gate
+// false = local API testing; API calls print "would send ..." and simulate
+// successful replies, so navigation/planting tests are not blocked by network.
+// true = competition/server mode; API calls are sent through MiniMessenger and
+// must wait for real server replies.
+const bool REQUIRE_SERVER_API = false;
+
 // The staged WiFi kill-switch test used LOW as the enabled position.
 const int SWITCH_ENABLED_STATE = LOW;
 const unsigned long SWITCH_DEBOUNCE_MS = 50;

@@ -97,6 +97,22 @@ void initRobotCommunication();
 void updateRobotCommunication();
 bool robotAllowedToMove();
 bool robotSafetyEmergencyActive();
+bool serverApiRequired();
+bool requestOpenAirlock(char airlock, uint32_t tagId);
+bool airlockRequestAccepted();
+bool airlockRequestRejected();
+bool requestFertilityCheck(uint32_t tagId);
+bool fertilityReplyReady();
+bool currentTagIsPlantable();
+int fertilityReplyCoordinateX();
+int fertilityReplyCoordinateY();
+bool reportSeedPlanted(uint32_t tagId);
+bool requestRevive(int targetTeam, const char *targetBoard);
+bool reviveReplyReady();
+bool reviveSucceeded();
+bool requestOccupancyMap();
+bool occupancyMapIsReady();
+uint8_t getOccupancyMapCell(int x, int y);
 
 bool robotStateRequiresSafety(RobotState state) {
   switch (state) {
