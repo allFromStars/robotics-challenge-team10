@@ -14,11 +14,6 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
 
 ---
 
-## Core Software Architecture
-
-The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
-
-
 ## 📂 Repository File Architecture
 
 ```text
@@ -39,6 +34,11 @@ The platform utilizes a customized **Event-Driven Non-Blocking State Machine** r
         └── robot_state.h           # Defines structural enum variables representing state variables
 
 ``` 
+
+## Core Software Architecture
+
+The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
+
 
 ### Core State Machine
 
