@@ -93,6 +93,24 @@ bool calibrateGyroBiasZ(unsigned long calibrationMs);
 
 void startRampWallFollowing();
 int updateRampWallFollowing(bool trackLeftWall);
+void initRobotCommunication();
+void updateRobotCommunication();
+bool robotAllowedToMove();
+bool robotSafetyEmergencyActive();
+
+bool robotStateRequiresSafety(RobotState state) {
+  switch (state) {
+    case STATE_CALIBRATING_IR:
+    case STATE_STANDBY_BASE:
+    case STATE_AIRLOCK_B:
+    case STATE_DEBUG:
+    case STATE_EMERGENCY_STOP:
+      return false;
+    default:
+      return true;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial) { delay(10); } 
@@ -184,13 +202,16 @@ void setup() {
   
   robotInfo.finalDestination = seedTargets[0]; // Load the first target from the list!
 
+  initRobotCommunication();
 
 }
 
 void loop() {
   refreshAllSensors();
+  updateRobotCommunication();
+  mc.resetCommandTimeout();
 
-  if (digitalRead(BUTTON_PIN) == LOW) { 
+  if (robotSafetyEmergencyActive()) {
     currentState = STATE_EMERGENCY_STOP;
   }
 
@@ -223,6 +244,11 @@ void loop() {
         currentState = STATE_CALIBRATING_IR; 
       }
       else if (cmd == 'p' || cmd == 'P') {
+        if (!robotAllowedToMove()) {
+          Serial.println("PLANTING BLOCKED: enable WiFi and mechanical switch first.");
+          return;
+        }
+
         Serial.println("PLANTING SEQUENCE");
         startPlanting(); 
         currentState = STATE_PLANTING; 
@@ -239,6 +265,15 @@ void loop() {
       }
   }
 
+  if (!robotAllowedToMove() && robotStateRequiresSafety(currentState)) {
+    stopMotors();
+
+    if (currentState == STATE_PLANTING) {
+      abortPlanting();
+    }
+
+    return;
+  }
 
   switch (currentState) {
 
@@ -415,8 +450,6 @@ void loop() {
     case STATE_EMERGENCY_STOP:
       stopMotors();
       abortPlanting();
-      Serial.println("Emergency Stop");
-      delay(5000);
       break;
     case STATE_BASE_NAVIGATION:
 

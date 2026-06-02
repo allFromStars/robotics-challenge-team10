@@ -1,6 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <Arduino.h>
+
 // ============================================================
 // Motor configuration
 // ============================================================
@@ -15,6 +17,18 @@ const int FORWARD_SIGN = 1;
 const int MOTOR_COMMAND_TIMEOUT_MS = 1000;
 
 const int MaxMotorSpeed = 600;
+
+// ============================================================
+// WiFi / MQTT safety configuration
+// ============================================================
+
+const char BOARD_ID[] = "Igor10";
+const unsigned long WIFI_REGISTER_INTERVAL_MS = 10000;
+const unsigned long WIFI_HEARTBEAT_TIMEOUT_MS = 1000;
+
+// The staged WiFi kill-switch test used LOW as the enabled position.
+const int SWITCH_ENABLED_STATE = LOW;
+const unsigned long SWITCH_DEBOUNCE_MS = 50;
 
 // ============================================================
 // --- TURN PID TUNING ---
