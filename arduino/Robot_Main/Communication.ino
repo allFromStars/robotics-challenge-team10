@@ -81,7 +81,7 @@ static int getIntForKey(const char *msg, const char *key, int defaultValue) {
 }
 
 static bool sendServerMessage(const char *msg) {
-  if (!REQUIRE_SERVER_API) {
+  if (!ENABLE_NETWORK || !REQUIRE_SERVER_API) {
     Serial.print("LOCAL API MODE: would send ");
     Serial.println(msg);
     return true;
@@ -124,12 +124,14 @@ static void updateSafetySwitch() {
   if (millis() - lastDebounceMs > SWITCH_DEBOUNCE_MS && reading != stableSwitchState) {
     stableSwitchState = reading;
 
-    Serial.print("Mechanical switch: ");
-    Serial.println(stableSwitchState == SWITCH_ENABLED_STATE ? "ENABLED" : "DISABLED");
+    if (stableSwitchState == SWITCH_ENABLED_STATE) {
+      localSwitchEnabled = !localSwitchEnabled;
+      Serial.print("Mechanical kill switch: ");
+      Serial.println(localSwitchEnabled ? "RUNNING" : "STOPPED");
+    }
   }
 
   lastSwitchReading = reading;
-  localSwitchEnabled = (stableSwitchState == SWITCH_ENABLED_STATE);
 }
 
 static void updateSafetyLed() {
@@ -279,7 +281,14 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
 void initRobotCommunication() {
   lastSwitchReading = digitalRead(BUTTON_PIN);
   stableSwitchState = lastSwitchReading;
-  localSwitchEnabled = (stableSwitchState == SWITCH_ENABLED_STATE);
+  localSwitchEnabled = false;
+
+  Serial.println("Mechanical kill switch: STOPPED. Press button once to run.");
+
+  if (!ENABLE_NETWORK) {
+    Serial.println("NETWORK DISABLED: MiniMessenger not started.");
+    return;
+  }
 
   messenger.onMessage(onCommunicationMessage);
   messenger.begin(
@@ -291,14 +300,18 @@ void initRobotCommunication() {
     BOARD_ID
   );
 
-  Serial.print("Initial mechanical switch: ");
-  Serial.println(localSwitchEnabled ? "ENABLED" : "DISABLED");
   Serial.println("Network connecting...");
 }
 
 void updateRobotCommunication() {
-  messenger.loop();
   updateSafetySwitch();
+
+  if (!ENABLE_NETWORK) {
+    updateSafetyLed();
+    return;
+  }
+
+  messenger.loop();
 
   bool connected = messenger.isConnected();
 
@@ -330,7 +343,7 @@ void updateRobotCommunication() {
 }
 
 bool robotAllowedToMove() {
-  if (!REQUIRE_WIFI_SAFETY) {
+  if (!ENABLE_NETWORK || !REQUIRE_WIFI_SAFETY) {
     if (!warnedLocalSafetyMode) {
       Serial.println("LOCAL TEST MODE: WiFi heartbeat is not required for movement.");
       warnedLocalSafetyMode = true;
@@ -343,11 +356,11 @@ bool robotAllowedToMove() {
 }
 
 bool robotSafetyEmergencyActive() {
-  return emergencyActive || (REQUIRE_WIFI_SAFETY && heartbeatTimeout);
+  return emergencyActive || (ENABLE_NETWORK && REQUIRE_WIFI_SAFETY && heartbeatTimeout);
 }
 
 bool serverApiRequired() {
-  return REQUIRE_SERVER_API;
+  return ENABLE_NETWORK && REQUIRE_SERVER_API;
 }
 
 bool requestOpenAirlock(char airlock, uint32_t tagId) {
@@ -358,7 +371,7 @@ bool requestOpenAirlock(char airlock, uint32_t tagId) {
   airlockAccepted = false;
   airlockReplyAirlock = airlock;
 
-  if (!REQUIRE_SERVER_API) {
+  if (!ENABLE_NETWORK || !REQUIRE_SERVER_API) {
     airlockReplyReceived = true;
     airlockAccepted = true;
   }
@@ -394,7 +407,7 @@ bool requestFertilityCheck(uint32_t tagId) {
   fertilityReplyX = -1;
   fertilityReplyY = -1;
 
-  if (!REQUIRE_SERVER_API) {
+  if (!ENABLE_NETWORK || !REQUIRE_SERVER_API) {
     fertilityReplyReceived = true;
     fertilityReplyFertile = true;
     fertilityReplyPlanted = false;
@@ -450,7 +463,7 @@ bool requestRevive(int targetTeam, const char *targetBoard) {
   reviveReplyReceived = false;
   reviveReplySuccess = false;
 
-  if (!REQUIRE_SERVER_API) {
+  if (!ENABLE_NETWORK || !REQUIRE_SERVER_API) {
     reviveReplyReceived = true;
     reviveReplySuccess = true;
   }

@@ -1,6 +1,8 @@
 uint32_t tofHistory1[TOF_FILTER_SIZE] = {0}, tofHistory2[TOF_FILTER_SIZE] = {0};
 uint32_t tofHistory3[TOF_FILTER_SIZE] = {0}, tofHistory4[TOF_FILTER_SIZE] = {0};
 int tofIdx1 = 0, tofIdx2 = 0, tofIdx3 = 0, tofIdx4 = 0;
+bool tofHistoryReady1 = false, tofHistoryReady2 = false;
+bool tofHistoryReady3 = false, tofHistoryReady4 = false;
 uint8_t rawFrame1[16], rawFrame2[16], rawFrame3[16], rawFrame4[16];
 
 // ============================================================
@@ -12,7 +14,7 @@ uint8_t rawFrame1[16], rawFrame2[16], rawFrame3[16], rawFrame4[16];
 // latest available IR, RFID, TOF, and IMU readings.
 
 // Helper functions declared
-uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx);
+uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx, bool &historyReady);
 uint32_t parseTofFrameBytes(uint8_t *frame);
 bool processTofStream(HardwareSerial &port, uint8_t *frame);
 void readAllTOF();
@@ -117,9 +119,16 @@ void readIMU() {
   }
 }
 
-uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx) {
+uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx, bool &historyReady) {
   // TOF readings can jump between frames, so each distance channel uses a small
   // moving average before the value is used for obstacle, ramp, or rescue logic.
+  if (!historyReady) {
+    for (int i = 0; i < TOF_FILTER_SIZE; i++) {
+      history[i] = sample;
+    }
+    historyReady = true;
+  }
+
   history[idx] = sample;
   idx = (idx + 1) % TOF_FILTER_SIZE;
   uint64_t sum = 0;
@@ -141,7 +150,7 @@ bool processTofStream(HardwareSerial &port, uint8_t *frame) {
     frame[0] = b;
     unsigned long start = millis();
     int index = 1;
-    while (index < 16 && millis() - start < 10) {
+    while (index < 16 && millis() - start < TOF_FRAME_TIMEOUT_MS) {
       if (port.available()) { frame[index] = port.read(); index++; }
     }
     if (index < 16 || frame[1] != 0x00 || frame[2] != 0xFF) return false;
@@ -155,22 +164,27 @@ bool processTofStream(HardwareSerial &port, uint8_t *frame) {
 
 void readAllTOF() {
   // Each TOF sensor is read independently so one missing frame does not block
-  // the rest of the robot loop.
-  if (tofFrontOnline && processTofStream(Serial1, rawFrame1)) {
+  // the rest of the robot loop. A valid frame marks the channel online; we do
+  // not permanently ignore a sensor just because it was quiet during startup.
+  if (processTofStream(Serial1, rawFrame1)) {
+    tofFrontOnline = true;
     uint32_t raw = parseTofFrameBytes(rawFrame1);
-    sensors.tof_front = (int32_t)runTofMovingAverage(raw, tofHistory1, tofIdx1) - TOF_FRONT_OFFSET;
+    sensors.tof_front = (int32_t)runTofMovingAverage(raw, tofHistory1, tofIdx1, tofHistoryReady1) - TOF_FRONT_OFFSET;
   }
-  if (tofLeftOnline && processTofStream(Serial2, rawFrame2)) {
+  if (processTofStream(Serial2, rawFrame2)) {
+    tofLeftOnline = true;
     uint32_t raw = parseTofFrameBytes(rawFrame2);
-    sensors.tof_left = (int32_t)runTofMovingAverage(raw, tofHistory2, tofIdx2) - TOF_LEFT_OFFSET;
+    sensors.tof_left = (int32_t)runTofMovingAverage(raw, tofHistory2, tofIdx2, tofHistoryReady2) - TOF_LEFT_OFFSET;
   }
-  if (tofRight1Online && processTofStream(Serial3, rawFrame3)) {
+  if (processTofStream(Serial3, rawFrame3)) {
+    tofRight1Online = true;
     uint32_t raw = parseTofFrameBytes(rawFrame3);
-    sensors.tof_right1 = (int32_t)runTofMovingAverage(raw, tofHistory3, tofIdx3) - TOF_RIGHT1_OFFSET;
+    sensors.tof_right1 = (int32_t)runTofMovingAverage(raw, tofHistory3, tofIdx3, tofHistoryReady3) - TOF_RIGHT1_OFFSET;
   }
-  if (tofRight2Online && processTofStream(Serial4, rawFrame4)) {
+  if (processTofStream(Serial4, rawFrame4)) {
+    tofRight2Online = true;
     uint32_t raw = parseTofFrameBytes(rawFrame4);
-    sensors.tof_right2 = (int32_t)runTofMovingAverage(raw, tofHistory4, tofIdx4) - TOF_RIGHT2_OFFSET;
+    sensors.tof_right2 = (int32_t)runTofMovingAverage(raw, tofHistory4, tofIdx4, tofHistoryReady4) - TOF_RIGHT2_OFFSET;
   }
 }
 

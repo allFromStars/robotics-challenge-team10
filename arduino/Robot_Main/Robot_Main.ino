@@ -2,6 +2,7 @@
 #include <Motoron.h>
 #include "ICM_20948.h"
 #include <MFRC522_I2C.h>
+#include <MiniMessenger.h>
 #include "config.h"
 #include "pins.h"
 #include "robot_state.h"
@@ -74,8 +75,8 @@ INFO robotInfo;
 const int TOTAL_SEED_TARGETS = 5; 
 Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
   {0, 2}, // Target 1
-  {0, 1}, // Target 2
-  {4, 4}, // Target 3
+  {1, 2}, // Target 2
+  {0, 0}, // Target 3
   {4, 6}, // Target 4
   {6, 6}  // Target 5
 };
@@ -87,6 +88,8 @@ const float AIRLOCK_HEADING = -90;
 
 bool initSensors();
 bool initMotors();
+void stopMotors();
+void abortPlanting();
 bool checkI2CDevice(TwoWire &wireBus, uint8_t address);
 void refreshAllSensors();
 bool calibrateGyroBiasZ(unsigned long calibrationMs);
@@ -113,6 +116,7 @@ bool reviveSucceeded();
 bool requestOccupancyMap();
 bool occupancyMapIsReady();
 uint8_t getOccupancyMapCell(int x, int y);
+float normaliseAngleDeg(float angle);
 
 bool robotStateRequiresSafety(RobotState state) {
   switch (state) {
@@ -182,15 +186,6 @@ void setup() {
     rfid.PCD_Init();
   }
 
-  // check if data is coming from tof for 200 ms
-  unsigned long serialCheckStart = millis();
-  while (millis() - serialCheckStart < 200) {
-    if (Serial1.available() > 0) tofFrontOnline  = true;
-    if (Serial2.available() > 0) tofLeftOnline   = true;
-    if (Serial3.available() > 0) tofRight1Online = true;
-    if (Serial4.available() > 0) tofRight2Online = true;
-  }
-
   // =============================================================================
   // Components check
   // =============================================================================
@@ -198,11 +193,7 @@ void setup() {
   Serial.println(motorOnline ? "[OK] Motoron MCU" : "[FAILED] Motoron MCU");
   Serial.println(rfidOnline  ? "[OK] RFID Reader" : "[FAILED] RFID Reader");
   
-  // print tof status
-  Serial.println(tofFrontOnline  ? "[OK] TOF Front Sensor"  : "[FAILED] TOF Front Sensor");
-  Serial.println(tofLeftOnline   ? "[OK] TOF Left Sensor"   : "[FAILED] TOF Left Sensor");
-  Serial.println(tofRight1Online ? "[OK] TOF Right 1 Sensor" : "[FAILED] TOF Right 1 Sensor");
-  Serial.println(tofRight2Online ? "[OK] TOF Right 2 Sensor" : "[FAILED] TOF Right 2 Sensor");
+  Serial.println("[INFO] TOF sensors: runtime UART frame detection enabled");
   Serial.println("=========================================\n");
 
   //robot info setup
@@ -317,7 +308,7 @@ void loop() {
           Serial.println("Arrived at the Exit Airlock. Initiating exit Sequence...");
           
           // Calculate the turn to face the correct way for the airlock
-          float turnAngle = AIRLOCK_HEADING - sensors.yaw;
+          float turnAngle = normaliseAngleDeg(AIRLOCK_HEADING - sensors.yaw);
           startTurnAngle(turnAngle);
           
           currentState = STATE_ALIGN_AIRLOCK_B;
@@ -346,7 +337,13 @@ void loop() {
       // pass over to turn
       Coordinate nextNode = robotInfo.getNextNode(); 
       float targetHeading = getTargetHeading(robotInfo.currentPos, nextNode);
-      float turnAngle = targetHeading - sensors.yaw;
+      float turnAngle = normaliseAngleDeg(targetHeading - sensors.yaw);
+      Serial.print("[PLAN] Next node target heading: ");
+      Serial.print(targetHeading, 1);
+      Serial.print(" current yaw: ");
+      Serial.print(sensors.yaw, 1);
+      Serial.print(" turn angle: ");
+      Serial.println(turnAngle, 1);
       
       startTurnAngle(turnAngle); 
       currentState = STATE_TURN;
