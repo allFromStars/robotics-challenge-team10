@@ -214,23 +214,5 @@ A hardware-vetted rescue routine. It uses front Time-of-Flight (ToF) metrics to 
 
 <img width="500" alt="Task 8 Flowchart" src="https://github.com/user-attachments/assets/c269a279-673c-473d-a200-3dbf73e8475a" />
 
----
 
-## Algorithms
-
-### 1. Global Navigation & Pathfinder Optimization (Task 3)
-* **Core Algorithm:** Dijkstra's Algorithm / A* Search
-* **Implementation details:** `[ACTION REQUIRED: Explain briefly how your code converts the grid into a node graph, how it updates weights for obstacles, and how it triggers a recalculation loop if a path is blocked.]`
-
-### 2. Adaptive Cruise & Anti-Windup Torque Control (Task 5)
-* **Core Algorithm:** PI Velocity Control + Linear Distance Scaling
-* **The Math:** Target Velocity is dynamically throttled based on the front ToF distance metric:
-    $$V_{target} = V_{max} \times \left( \frac{\text{Distance}_{\text{current}} - \text{Distance}_{\text{stop}}}{\text{Distance}_{\text{detect}} - \text{Distance}_{\text{stop}}} \right)$$
-* **Implementation details:** `[ACTION REQUIRED: Describe how resetting the speed integral memory to 0 during a safety stop prevents the robot from violently lunging forward when an airlock door or obstacle clears.]`
-
-### 3. Open Field Heading-Lock Controller (Task 4 & 8 Fallback)
-* **Core Algorithm:** IMU Gyro-Stabilized Heading Hold
-* **Implementation details:** `[ACTION REQUIRED: Document how taking a static "snapshot" of the IMU yaw angle the millisecond the robot enters an unguided field zone prevents the robot from developing a wandering target angle, correcting wheel slippage dynamically.]`
-
----
 
