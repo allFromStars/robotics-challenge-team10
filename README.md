@@ -19,6 +19,27 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
 The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
 
 
+## 📂 Repository File Architecture
+
+```text
+├── .gitignore                      # Excludes local configuration and IDE build directories
+├── README.md                       # Primary project documentation and structural guides
+└── arduino/                        # Master microcontroller software suite
+    ├── Archive/                    # Historical testing snapshots and deprecated modules
+    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
+        ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
+        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
+        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
+        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
+        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
+        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
+        ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
+        ├── config.h                # Global calibration parameters, target speeds, and controller gains
+        ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
+        └── robot_state.h           # Defines structural enum variables representing state variables
+
+``` 
+
 ### Core State Machine
 
 The primary operational logic of the platform is partitioned into three key state categories within the control loop execution tree:
@@ -160,26 +181,6 @@ The physical wiring configuration of the robot is split cleanly across functiona
 
 ---
 
-## 📂 Repository File Architecture
-
-```text
-├── .gitignore                      # Excludes local configuration and IDE build directories
-├── README.md                       # Primary project documentation and structural guides
-└── arduino/                        # Master microcontroller software suite
-    ├── Archive/                    # Historical testing snapshots and deprecated modules
-    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
-        ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
-        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
-        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
-        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
-        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
-        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
-        ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
-        ├── config.h                # Global calibration parameters, target speeds, and controller gains
-        ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
-        └── robot_state.h           # Defines structural enum variables representing state variables
-
-``` 
 
 ## Task-by-Task Control Flowcharts
 
