@@ -257,7 +257,8 @@ Implements an event-driven intersection parsing system. When an intersection thr
 ### Task 3: Solid Grid Navigation
 Combines a global pathfinding layer with localized line-following execution primitives to evaluate the map and navigate around arena grid layouts safely.
 
-<img width="500" alt="Task 3 Flowchart" src="https://github.com/user-attachments/assets/a0beeca7-9684-4537-9cd6-323a5f174b5b" />
+<img width="1275" height="4727" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (8)" src="https://github.com/user-attachments/assets/88cdd705-640f-4cd4-b467-7063c58c7b88" />
+
 
 ### Task 4: Open Field Dead-Reckoning
 Executes precise maneuvers across track regions lacking explicit physical line guides, leveraging wheel encoder tracking and IMU yaw stability logic to minimize cumulative drift.
