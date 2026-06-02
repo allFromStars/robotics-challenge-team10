@@ -272,8 +272,7 @@ A dual-layer **Adaptive Cruise Control (ACC) and Proportional-Integral (PI) Velo
 
 
 ### Task 6: Wall following
-<img width="1992" height="2373" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (10)" src="https://github.com/user-attachments/assets/33b8f543-1846-4fd4-9cdd-5e076b974143" />
-
+<img src="images/task6_flowchart.png" alt="Task 6 Flowchart" width="500">
 
 ### Task 7: Obstacle detection and avoidance
 <img width="2093" height="3176" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (9)" src="https://github.com/user-attachments/assets/d51e4458-6d39-4a85-804d-84310e58d862" />
