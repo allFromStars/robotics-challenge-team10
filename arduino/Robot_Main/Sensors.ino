@@ -3,6 +3,14 @@ uint32_t tofHistory3[TOF_FILTER_SIZE] = {0}, tofHistory4[TOF_FILTER_SIZE] = {0};
 int tofIdx1 = 0, tofIdx2 = 0, tofIdx3 = 0, tofIdx4 = 0;
 uint8_t rawFrame1[16], rawFrame2[16], rawFrame3[16], rawFrame4[16];
 
+// ============================================================
+// Sensor module overview
+// ============================================================
+// This file keeps all sensor polling and sensor calibration helpers in one
+// place. During the viva, the key point is that Robot_Main.ino calls
+// refreshAllSensors() every loop, so control and safety decisions use the
+// latest available IR, RFID, TOF, and IMU readings.
+
 // Helper functions declared
 uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx);
 uint32_t parseTofFrameBytes(uint8_t *frame);
@@ -15,6 +23,7 @@ bool calibrateGyroBiasZ(unsigned long calibrationMs);
 
 
 bool checkI2CDevice(TwoWire &wireBus, uint8_t address) {
+  // Quick hardware presence check used during startup diagnostics.
   wireBus.beginTransmission(address);
   return (wireBus.endTransmission() == 0); 
 }
@@ -39,6 +48,9 @@ bool initIMU() {
 }
 
 bool calibrateGyroBiasZ(unsigned long calibrationMs) {
+  // Testing/calibration evidence: the robot samples stationary gyro Z readings
+  // and stores the average bias. Later yaw integration subtracts this value so
+  // small sensor offset does not immediately become heading drift.
   Serial.println("Calibrating IMU gyro bias...");
   gyroBiasZ = 0.0;
 
@@ -72,6 +84,9 @@ bool calibrateGyroBiasZ(unsigned long calibrationMs) {
 }
 
 void refreshAllSensors() {
+  // Main sensor refresh point called at the top of loop(). Keeping this central
+  // makes it easy to explain that every behaviour reads from the same shared
+  // sensors struct rather than polling hardware in many separate places.
   readAllTOF();
   readIR(); // IR stays active (uses native microcontroller pins)
   
@@ -84,6 +99,8 @@ void refreshAllSensors() {
 }
 
 void readIMU() {
+  // Convert gyro angular velocity into yaw by integrating over time. A deadband
+  // filters tiny noise around zero after the startup bias calibration.
   if (myICM.dataReady()) {
     myICM.getAGMT();
 
@@ -101,6 +118,8 @@ void readIMU() {
 }
 
 uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx) {
+  // TOF readings can jump between frames, so each distance channel uses a small
+  // moving average before the value is used for obstacle, ramp, or rescue logic.
   history[idx] = sample;
   idx = (idx + 1) % TOF_FILTER_SIZE;
   uint64_t sum = 0;
@@ -109,10 +128,13 @@ uint32_t runTofMovingAverage(uint32_t sample, uint32_t *history, int &idx) {
 }
 
 uint32_t parseTofFrameBytes(uint8_t *frame) {
+  // The TOF modules send distance in bytes 8-10 of a validated 16-byte frame.
   return ((uint32_t)frame[8]) | ((uint32_t)frame[9] << 8) | ((uint32_t)frame[10] << 16);
 }
 
 bool processTofStream(HardwareSerial &port, uint8_t *frame) {
+  // Frame validation protects the robot from acting on partial/noisy UART data:
+  // start byte, header bytes, and checksum must all match before accepting it.
   while (port.available()) {
     uint8_t b = port.read();
     if (b != 0x57) continue;
@@ -132,6 +154,8 @@ bool processTofStream(HardwareSerial &port, uint8_t *frame) {
 }
 
 void readAllTOF() {
+  // Each TOF sensor is read independently so one missing frame does not block
+  // the rest of the robot loop.
   if (tofFrontOnline && processTofStream(Serial1, rawFrame1)) {
     uint32_t raw = parseTofFrameBytes(rawFrame1);
     sensors.tof_front = (int32_t)runTofMovingAverage(raw, tofHistory1, tofIdx1) - TOF_FRONT_OFFSET;
@@ -151,6 +175,12 @@ void readAllTOF() {
 }
 
 void readIR() {
+  // QTR RC reflectance read:
+  // 1. Charge each IR sensor pin HIGH.
+  // 2. Switch pins back to input.
+  // 3. Measure how long each pin takes to discharge.
+  // These raw timings are later normalised using sensorMin/sensorMax from
+  // IRCalibration.ino before line position is calculated.
   for (uint8_t i = 0; i < IR_COUNT; i++) {
     pinMode(irPins[i], OUTPUT);
     digitalWrite(irPins[i], HIGH);
@@ -183,6 +213,8 @@ void readIR() {
 
 
 void CheckRFID() {
+  // RFID is used as node evidence. A detected tag is packed into sensors.rfidInfo
+  // so navigation can confirm intersections and open-field nodes.
   // Send Wake-Up command 
   byte bufferATQA[2];
   byte bufferSize = sizeof(bufferATQA);
@@ -214,6 +246,8 @@ void CheckRFID() {
 }
 
 float getHeadingDegrees() {
+  // Compass heading is kept as extra telemetry/debug information. The main yaw
+  // control uses the calibrated gyro integration above.
   float magX = myICM.magX();
   float magY = myICM.magY();
 
@@ -254,6 +288,8 @@ void snapYawToGrid() { //for correcting gyro drift
 }
 
 void DebugSensors() {
+  // Viva/demo helper: serial debug mode prints live sensor values so calibration
+  // and sensor behaviour can be shown without changing the autonomous code.
   refreshAllSensors();
 
   static unsigned long lastPrint = 0;
