@@ -35,6 +35,66 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
 
 ``` 
 
+
+```mermaid
+flowchart TD
+    %% Define Node Colors and Styles
+    classDef core fill:#fef08a,stroke:#ca8a04,stroke-width:3px,color:#854d0e,font-weight:bold
+    classDef logic fill:#bae6fd,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+    classDef hardware fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#4c1d95
+    classDef data fill:#e5e5e5,stroke:#525252,stroke-width:2px,color:#171717
+    classDef physical fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#14532d
+
+    subgraph Data & Configuration Layer
+        CONFIG["config.h & pins.h<br>(Constants, Speeds, GPIO)"]
+        STATE["robot_state.h<br>(RobotState Enum & Arena Map)"]
+    end
+
+    subgraph Core Execution Layer
+        MAIN["Robot_Main.ino<br>High-Frequency Polling Loop<br>& State Machine"]
+    end
+
+    subgraph Algorithmic & Logic Layer
+        PATH["PathFinding.ino<br>(Dijkstra Algorithm & Grid Node Routing)"]
+        NAV["Navigation.ino<br>(Line Tracking, Dead-Reckoning, ACC Ramp)"]
+        CALIB["IRCalibration.ino<br>(Reflectance Normalisation Bounds)"]
+    end
+
+    subgraph Hardware Abstraction Layer
+        SENSORS["Sensors.ino<br>(I2C/UART Polling & Filtering)"]
+        HW["Hardware.ino<br>(Motoron I2C, PID Turning, Servo)"]
+    end
+
+    subgraph Physical Peripherals
+        ACTUATORS(["Motors & Seed Planter"])
+        INPUTS(["IMU, TOF, IR Array, RFID, Encoders"])
+    end
+
+    %% Data Flow Connections
+    CONFIG -.-> MAIN
+    STATE -.-> MAIN
+
+    MAIN <-->|"Updates target & requests path"| PATH
+    MAIN <-->|"Triggers movement states"| NAV
+    MAIN -->|"Triggers initialisation"| CALIB
+
+    NAV -->|"Requests telemetry"| SENSORS
+    NAV -->|"Sends PWM & Steering data"| HW
+    PATH -->|"Reads map grid"| STATE
+
+    SENSORS <-->|"Reads raw data"| INPUTS
+    HW -->|"Drives"| ACTUATORS
+    
+    MAIN -->|"Refreshes global sensor struct"| SENSORS
+
+    %% Apply Styles Safely at the Bottom
+    class CONFIG,STATE data
+    class MAIN core
+    class PATH,NAV,CALIB logic
+    class SENSORS,HW hardware
+    class ACTUATORS,INPUTS physical
+```
+
 ## Core Software Architecture
 
 The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
