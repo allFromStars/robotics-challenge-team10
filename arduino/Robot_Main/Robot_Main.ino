@@ -490,9 +490,12 @@ void loop() {
       break;
     }
 
+/*
     case STATE_STRANDED_ALIVE:
     case STATE_REVIVED_RETURN:
     case STATE_EXIT_ARENA:
+ */
+
     case STATE_ALIGN_AIRLOCK_B:  //finish rotating towards airlock
       if (updateTurnAngle()) {
         Serial.println("Safely parked in the airlock!");
