@@ -271,11 +271,15 @@ A dual-layer **Adaptive Cruise Control (ACC) and Proportional-Integral (PI) Velo
 <img width="500" alt="Task 5 Flowchart" src="https://github.com/user-attachments/assets/acffa5ba-ceba-4e3b-ba33-22e17de81b09" />
 
 
-
+### Task 6: Wall following
+A distance-controlled wall-following routine. It uses the side Time-of-Flight (ToF) sensor to monitor the robot’s distance from the airlock wall and applies steering correction when the robot drifts too close or too far away. The robot continues driving forward while maintaining a stable wall offset and stops once the RFID tag is detected to confirm the task is complete.
+<img width="1992" height="2373" alt="task6flowchart" src="https://github.com/user-attachments/assets/2f9c0eaf-7d16-478a-bd13-09b5439675bb" />
 
 
 ### Task 7: Obstacle detection and avoidance
+A map based obstacle avoidance routine. The robot checks the front Time-of-Flight (ToF) sensor after turning towards the next planned node. If an obstacle is detected within the safety threshold, the target node is marked as blocked in the arena map and the robot replans a new route around it. If no obstacle is detected, the robot continues using either grid-line navigation or open-field navigation, then updates its position before planning the next movement.
 <img width="2093" height="3176" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (9)" src="https://github.com/user-attachments/assets/d51e4458-6d39-4a85-804d-84310e58d862" />
+
 
 
 
