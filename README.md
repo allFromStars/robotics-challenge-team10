@@ -90,10 +90,18 @@ The firmware operates on a multi-peripheral sensor-to-actuator matrix mapped as 
 ## 📂 Repository File Architecture
 
 ```text
-├── robotics-challenge-team10.ino  # Global entry point & core state machine loop
-├── config.h                        # Master system thresholds, gains, and PID constants
-├── pins.h                          # Hardwired microcontroller pin definitions
-├── Sensors.ino                     # Non-blocking peripheral updates & median filtering
-├── Navigation.ino                  # Core movement execution loops & PD steering math
-└── Hardware.ino                    # Low-level motor commands & hardware initializations
-
+├── .gitignore                      # Excludes local configuration and IDE build directories
+├── README.md                       # Primary project documentation and structural guides
+└── arduino/                        # Master microcontroller software suite
+    ├── Archive/                    # Historical testing snapshots and deprecated modules
+    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
+        ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
+        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
+        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
+        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
+        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
+        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
+        ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
+        ├── config.h                # Global calibration parameters, target speeds, and controller gains
+        ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
+        └── robot_state.h           # Defines structural enum variables representing state variables
