@@ -25,6 +25,73 @@ The platform utilizes a customized **Event-Driven Non-Blocking State Machine** r
 
 ---
 
+## ⚙️ Electrical Subsystem Pin Mapping
+
+The physical wiring configuration of the robot is split cleanly across functional subsystems to isolate sensory data processing from power distribution and actuator feedback.
+
+### 1. Motor Control and Encoder Feedback
+| Component / Signal | Pin / Interface | Technical Description |
+| :--- | :--- | :--- |
+| **Motor Controller** | `Wire1 I2C` | Motoron M3S550 serial control interface |
+| **Left Motor** | `Motoron CH1` | Left drivetrain power output channel |
+| **Right Motor** | `Motoron CH2` | Right drivetrain power output channel |
+| **Left Encoder A** | `D2` | High-speed primary encoder interrupt input |
+| **Left Encoder B** | `D3` | Secondary phase input for direction resolution |
+| **Right Encoder A** | `D4` | High-speed primary encoder interrupt input |
+| **Right Encoder B** | `D5` | Secondary phase input for direction resolution |
+
+### 2. Buttons and Status Indicators
+| Component / Signal | Pin / Interface | Technical Description |
+| :--- | :--- | :--- |
+| **Mechanical Kill Switch / Mode Button** | `D8` | Hardware push button menu input |
+| **Mechanical Rescue Switch** | `D13` | Bumper collision switch (`INPUT_PULLUP`) |
+| **RGB LED Red Channel** | `D52` | Blinking status indicator active when stationary |
+| **RGB LED Green Channel** | `D50` | Active tracking indicator / Task 8 Rescue Success signal |
+| **RGB LED Common Reference** | `GND` | Direct common ground reference line |
+
+### 3. Sensors Array
+| Component / Signal | Pin / Interface | Technical Description |
+| :--- | :--- | :--- |
+| **QTR Reflectance Sensor Array** | `D22–D30` | QTR S1–S9 RC timing signals for guideline positioning |
+| **RFID Reader** | `Wire1 I2C` | I2C scanning module for localized node coordinate tracking |
+| **TOF Sensor 1** | `Serial1` | UART hardware serial interface (Front approach tracking) |
+| **TOF Sensor 2** | `Serial2` | UART hardware serial interface (Peripheral wall tracking) |
+| **TOF Sensor 3** | `Serial3` | UART hardware serial interface |
+| **TOF Sensor 4** | `Serial4` | UART hardware serial interface |
+
+### 4. Power and Common Reference
+| Component / Signal | Pin / Interface | Technical Description |
+| :--- | :--- | :--- |
+| **Lab Power Supply / Battery Input** | `Power Input` | Central high-current motor and electronics power rail |
+| **Common Ground** | `GND rail` | Shared ground reference for MCU, sensors, driver, and LEDs |
+
+> 💡 **Developer Note:** While the general schematic indicates a Common-Cathode LED configuration, certain active framework revisions utilize a Common-Anode module on pins `D50/D52`. In Common-Anode builds, pins are driven `LOW` to illuminate and `HIGH` to disable.
+
+---
+
+## 📂 Repository File Architecture
+
+```text
+├── .gitignore                      # Excludes local configuration and IDE build directories
+├── README.md                       # Primary project documentation and structural guides
+└── arduino/                        # Master microcontroller software suite
+    ├── Archive/                    # Historical testing snapshots and deprecated modules
+    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
+        ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
+        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
+        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
+        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
+        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
+        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
+        ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
+        ├── config.h                # Global calibration parameters, target speeds, and controller gains
+        ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
+        └── robot_state.h           # Defines structural enum variables representing state variables
+
+
+
+
+
 ## Task-by-Task Control Flowcharts
 
 ### Task 1: Standard Line Tracking
@@ -77,65 +144,3 @@ A hardware-vetted rescue routine. It uses front Time-of-Flight (ToF) metrics to 
 
 ---
 
-## ⚙️ Electrical Subsystem Pin Mapping
-
-The physical wiring configuration of the robot is split cleanly across functional subsystems to isolate sensory data processing from power distribution and actuator feedback.
-
-### 1. Motor Control and Encoder Feedback
-| Component / Signal | Pin / Interface | Technical Description |
-| :--- | :--- | :--- |
-| **Motor Controller** | `Wire1 I2C` | Motoron M3S550 serial control interface |
-| **Left Motor** | `Motoron CH1` | Left drivetrain power output channel |
-| **Right Motor** | `Motoron CH2` | Right drivetrain power output channel |
-| **Left Encoder A** | `D2` | High-speed primary encoder interrupt input |
-| **Left Encoder B** | `D3` | Secondary phase input for direction resolution |
-| **Right Encoder A** | `D4` | High-speed primary encoder interrupt input |
-| **Right Encoder B** | `D5` | Secondary phase input for direction resolution |
-
-### 2. Buttons and Status Indicators
-| Component / Signal | Pin / Interface | Technical Description |
-| :--- | :--- | :--- |
-| **Mechanical Kill Switch / Mode Button** | `D8` | Hardware push button menu input |
-| **Mechanical Rescue Switch** | `D13` | *Task 8 Addition:* Bumper collision switch (`INPUT_PULLUP`) |
-| **RGB LED Red Channel** | `D52` | Blinking status indicator active when stationary |
-| **RGB LED Green Channel** | `D50` | Active tracking indicator / Task 8 Rescue Success signal |
-| **RGB LED Common Reference** | `GND` | Direct common ground reference line |
-
-### 3. Sensors Array
-| Component / Signal | Pin / Interface | Technical Description |
-| :--- | :--- | :--- |
-| **QTR Reflectance Sensor Array** | `D22–D30` | QTR S1–S9 RC timing signals for guideline positioning |
-| **RFID Reader** | `Wire1 I2C` | I2C scanning module for localized node coordinate tracking |
-| **TOF Sensor 1** | `Serial1` | UART hardware serial interface (Front approach tracking) |
-| **TOF Sensor 2** | `Serial2` | UART hardware serial interface (Peripheral wall tracking) |
-| **TOF Sensor 3** | `Serial3` | UART hardware serial interface |
-| **TOF Sensor 4** | `Serial4` | UART hardware serial interface |
-
-### 4. Power and Common Reference
-| Component / Signal | Pin / Interface | Technical Description |
-| :--- | :--- | :--- |
-| **Lab Power Supply / Battery Input** | `Power Input` | Central high-current motor and electronics power rail |
-| **Common Ground** | `GND rail` | Shared ground reference for MCU, sensors, driver, and LEDs |
-
-> 💡 **Developer Note:** While the general schematic indicates a Common-Cathode LED configuration, certain active framework revisions utilize a Common-Anode module on pins `D50/D52`. In Common-Anode builds, pins are driven `LOW` to illuminate and `HIGH` to disable.
-
----
-
-## 📂 Repository File Architecture
-
-```text
-├── .gitignore                      # Excludes local configuration and IDE build directories
-├── README.md                       # Primary project documentation and structural guides
-└── arduino/                        # Master microcontroller software suite
-    ├── Archive/                    # Historical testing snapshots and deprecated modules
-    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
-        ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
-        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
-        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
-        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
-        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
-        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
-        ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
-        ├── config.h                # Global calibration parameters, target speeds, and controller gains
-        ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
-        └── robot_state.h           # Defines structural enum variables representing state variables
