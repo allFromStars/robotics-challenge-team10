@@ -589,13 +589,15 @@ int updateRampWallFollowing(bool trackLeftWall) {
   }
 
 
-  int leftSpeed = basePWM + correction;
-  int rightSpeed = basePWM - correction;
-
+  // Positive correction means the robot is too close to the tracked wall.
+  // Apply steering away from that wall: away from left wall = turn right,
+  // away from right wall = turn left.
+  int leftSpeed = basePWM - correction;
+  int rightSpeed = basePWM + correction;
 
   if (!trackLeftWall) {
-     leftSpeed = basePWM - correction;
-     rightSpeed = basePWM + correction;
+     leftSpeed = basePWM + correction;
+     rightSpeed = basePWM - correction;
   }
 
   driveMotors(leftSpeed, rightSpeed);
@@ -636,7 +638,7 @@ int updateRescueApproach() {
   int dist = sensors.tof_front;
 
   // Physical Switch (D13)
-  if (digitalRead(BUMPER_PIN) == LOW) {
+  if (digitalRead(BUMPER_PIN) == HIGH) {
     stopMotors();
     rescueInitialised = false; 
     Serial.println("[RESCUE] Mechanical Contact Confirmed!");

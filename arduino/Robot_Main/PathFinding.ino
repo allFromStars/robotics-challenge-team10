@@ -141,10 +141,12 @@ float getTargetHeading(Coordinate current, Coordinate next) {
   int dx = next.x - current.x;
   int dy = next.y - current.y;
 
-  if (dy > 0)  return 0.0;   // Next node is North
-  if (dx > 0)  return 90.0;  // Next node is East
-  if (dy < 0)  return 180.0; // Next node is South
-  if (dx < 0)  return 270.0; // Next node is West
+  // Yaw convention used by the IMU integration in this robot:
+  // North = 0, East/right turn = -90, South = 180, West/left turn = +90.
+  if (dy > 0)  return 0.0;    // Next node is North
+  if (dx > 0)  return -90.0;  // Next node is East
+  if (dy < 0)  return 180.0;  // Next node is South
+  if (dx < 0)  return 90.0;   // Next node is West
 
   return sensors.yaw; //stay at current heading if coordinates match
 }

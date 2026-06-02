@@ -56,10 +56,10 @@ const uint8_t IMU_ADDR = 0x68;
 
 // Current Robot_Main uses hardware serial ports:
 //
-// front  -> Serial1
-// left   -> Serial2
-// right1 -> Serial3
-// right2 -> Serial4
+// front  -> Serial1 -> D0 / D1
+// left   -> Serial2 -> D19 / D18
+// right1 -> Serial3 -> D17 / D16
+// right2 -> Serial4 -> D15 / D14
 //
 // These are not pin constants because HardwareSerial objects are used
 // directly in the code.
@@ -74,12 +74,12 @@ const int BUTTON_PIN = D8;
 // RGB LED pins from robot_demo.
 // Current code assumes common anode: HIGH = off, LOW = on.
 const int RGB_RED_PIN = D52;
-const int RGB_GREEN_PIN = D50;
+const int RGB_GREEN_PIN = D51;
 
 // Add blue pin here if installed later.
 // const int RGB_BLUE_PIN = ...;
 
-const int BUMPER_PIN = D13;
+const int BUMPER_PIN = D50;
 
 
 #endif
