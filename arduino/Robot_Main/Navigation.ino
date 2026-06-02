@@ -638,7 +638,7 @@ int updateRescueApproach() {
   int dist = sensors.tof_front;
 
   // Physical Switch (D13)
-  if (digitalRead(BUMPER_PIN) == HIGH) {
+  if (digitalRead(BUMPER_PIN) == LOW) {
     stopMotors();
     rescueInitialised = false; 
     Serial.println("[RESCUE] Mechanical Contact Confirmed!");

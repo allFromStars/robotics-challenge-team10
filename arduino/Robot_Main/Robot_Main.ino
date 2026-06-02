@@ -8,6 +8,7 @@
 #include "robot_state.h"
 
 bool debugIRMode = false;
+bool startPlanWhenAllowed = false;
 
 RobotState currentState = STATE_DEBUG; 
 
@@ -74,7 +75,7 @@ INFO robotInfo;
 
 const int TOTAL_SEED_TARGETS = 5; 
 Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
-  {0, 2}, // Target 1
+  {1, 4}, // Target 1
   {1, 2}, // Target 2
   {0, 0}, // Target 3
   {4, 6}, // Target 4
@@ -116,6 +117,7 @@ bool reviveSucceeded();
 bool requestOccupancyMap();
 bool occupancyMapIsReady();
 uint8_t getOccupancyMapCell(int x, int y);
+void setRescueLedOverride(bool enabled);
 float normaliseAngleDeg(float angle);
 
 bool robotStateRequiresSafety(RobotState state) {
@@ -133,7 +135,10 @@ bool robotStateRequiresSafety(RobotState state) {
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) { delay(10); } 
+  unsigned long serialWaitStartMs = millis();
+  while (!Serial && millis() - serialWaitStartMs < 1500) {
+    delay(10);
+  }
   delay(500);
   
   Serial.println("\n=========================================");
@@ -210,7 +215,7 @@ void setup() {
   robotInfo.finalDestination = seedTargets[0]; // Load the first target from the list!
 
   initRobotCommunication();
-
+  currentState = STATE_CALIBRATING_IR;
 }
 
 void loop() {
@@ -352,6 +357,18 @@ void loop() {
 
 
     case STATE_STANDBY_BASE:
+      if (startPlanWhenAllowed && robotAllowedToMove()) {
+        startPlanWhenAllowed = false;
+        stopMotors();
+        calibrateGyroBiasZ(1000);
+        sensors.yaw = 0.0;
+        lastTimeMicros = micros();
+        newPathNeeded = true;
+        currentState = STATE_PLAN;
+        Serial.println("Start switch enabled. Starting mission plan.");
+        break;
+      }
+
       stopMotors();
       break;
 
@@ -361,7 +378,9 @@ void loop() {
       
       // When 12 seconds are up, transition to standby!
       if (isCalibrationComplete()) {
-        Serial.println("Robot Ready. Waiting for 'g' command.");
+        Serial.println("Robot Ready. Press the start switch to begin mission plan.");
+        stopMotors();
+        startPlanWhenAllowed = true;
         currentState = STATE_STANDBY_BASE;
       }
       break;
@@ -502,8 +521,11 @@ void loop() {
           contactTimeMs = millis();
           
           // turn on LED
+          setRescueLedOverride(true);
           digitalWrite(RGB_GREEN_PIN, LOW); 
-          Serial.println("[RESCUE] Contact made! Illuminating GREEN LED and holding for 2s...");
+          Serial.print("[RESCUE] Contact made! Illuminating GREEN LED and holding for ");
+          Serial.print(RESCUE_LED_HOLD_MS / 1000);
+          Serial.println("s...");
         } 
         else if (rescueStatus == -1) {
           Serial.println("ABORT: Rescue timeout triggered.");
@@ -516,13 +538,16 @@ void loop() {
 
         stopMotors(); 
         
-        if (millis() - contactTimeMs >= 2000) {
+        if (millis() - contactTimeMs >= RESCUE_LED_HOLD_MS) {
           // Turn OFF Green LED 
+          setRescueLedOverride(false);
           digitalWrite(RGB_GREEN_PIN, HIGH);
           digitalWrite(RGB_RED_PIN, HIGH);
           //digitalWrite(RGB_BLUE_PIN, HIGH);
           
-          Serial.println("[RESCUE] 2-second hold complete. Initiating return sequence.");
+          Serial.print("[RESCUE] ");
+          Serial.print(RESCUE_LED_HOLD_MS / 1000);
+          Serial.println("-second hold complete. Initiating return sequence.");
           
           robotInfo.finalDestination = {START_X, START_Y}; 
           newPathNeeded = true;

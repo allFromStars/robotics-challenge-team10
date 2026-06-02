@@ -193,5 +193,6 @@ const int RESCUE_DETECT_DIST_MM = 350;
 const int RESCUE_MAX_SPEED = 280; // Cruising speed
 const int RESCUE_MIN_SPEED = 150; // Crawl speed (must be high enough to overcome motor friction)
 const unsigned long RESCUE_TIMEOUT_MS = 15000;
+const unsigned long RESCUE_LED_HOLD_MS = 5000;
 
 #endif

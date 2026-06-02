@@ -74,7 +74,7 @@ const int BUTTON_PIN = D8;
 // RGB LED pins from robot_demo.
 // Current code assumes common anode: HIGH = off, LOW = on.
 const int RGB_RED_PIN = D52;
-const int RGB_GREEN_PIN = D51;
+const int RGB_GREEN_PIN = D53;
 
 // Add blue pin here if installed later.
 // const int RGB_BLUE_PIN = ...;

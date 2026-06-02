@@ -33,7 +33,15 @@ const int RIGHT_MOTOR_CHANNEL = 2;
 
 const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
-const int FORWARD_SIGN = -1;
+const int FORWARD_SIGN = 1;
+
+// Mechanical button wiring:
+// one side of the button -> GND
+// other side -> D8
+// INPUT_PULLUP means released = HIGH, pressed = LOW.
+const int CONTROL_BUTTON_PIN = D8;
+const int CONTROL_BUTTON_PRESSED = LOW;
+const unsigned long DEBOUNCE_DELAY_MS = 50;
 
 // --------------------
 // IMU setup
@@ -75,8 +83,8 @@ float Kd = 0.10;
 // If the robot turns the wrong way, swap RIGHT_TURN_ANGLE_DEG and
 // LEFT_TURN_ANGLE_DEG signs.
 
-const float RIGHT_TURN_ANGLE_DEG = 90.0;
-const float LEFT_TURN_ANGLE_DEG = -90.0;
+const float RIGHT_TURN_ANGLE_DEG = -90.0;
+const float LEFT_TURN_ANGLE_DEG = 90.0;
 
 float turnKp = 25.5;
 float turnKd = 1.8;
@@ -165,6 +173,10 @@ unsigned long bTagDetectedMs = 0;
 unsigned long lineLostStartMs = 0;
 unsigned long lastDebugPrintMs = 0;
 unsigned long reacquireCenteredStartMs = 0;
+bool task2Running = false;
+bool lastButtonReading = HIGH;
+bool stableButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
 
 // --------------------
 // Route timing tuning
@@ -861,22 +873,48 @@ void runTask2() {
 // --------------------
 
 void handleSerialCommands() {
-  if (!Serial.available()) {
-    return;
+  while (Serial.available()) {
+    Serial.read();
+  }
+}
+
+void startTask2FromButton() {
+  task2Running = true;
+  resetTask2Run();
+  enterState(T2_LEAVE_DEPLOYMENT_AREA);
+  Serial.println("BUTTON: Task 2 started.");
+}
+
+void stopTask2FromButton() {
+  task2Running = false;
+  stopMotors();
+  resetImuTurn();
+  enterState(T2_IDLE);
+  Serial.println("BUTTON: Task 2 stopped.");
+}
+
+void handleControlButton() {
+  bool reading = digitalRead(CONTROL_BUTTON_PIN);
+
+  if (reading != lastButtonReading) {
+    lastDebounceTime = millis();
   }
 
-  char command = Serial.read();
+  if (millis() - lastDebounceTime > DEBOUNCE_DELAY_MS) {
+    if (reading != stableButtonState) {
+      stableButtonState = reading;
 
-  if (command == 'g' || command == 'G') {
-    resetTask2Run();
-    enterState(T2_LEAVE_DEPLOYMENT_AREA);
+      if (stableButtonState == CONTROL_BUTTON_PRESSED) {
+        if (task2Running) {
+          stopTask2FromButton();
+        } else {
+          startTask2FromButton();
+        }
+      }
+    }
   }
 
-  if (command == 's' || command == 'S') {
-    stopMotors();
-    resetImuTurn();
-    enterState(T2_IDLE);
-  }
+  lastButtonReading = reading;
 }
 
 // --------------------
@@ -885,7 +923,9 @@ void handleSerialCommands() {
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {
+
+  unsigned long serialWaitStartMs = millis();
+  while (!Serial && millis() - serialWaitStartMs < 1500) {
     delay(10);
   }
 
@@ -893,8 +933,12 @@ void setup() {
 
   Serial.println();
   Serial.println("Task 2: scripted base exit route + IMU 90 turns + RFID stop");
-  Serial.println("Commands: g = start, s = stop");
+  Serial.println("Mechanical control button: D8 to GND.");
+  Serial.println("Press button once to start Task 2.");
+  Serial.println("Press button again to stop motors.");
   Serial.println("Current mode: stop on any RFID after second turn.");
+
+  pinMode(CONTROL_BUTTON_PIN, INPUT_PULLUP);
 
   Wire.begin();
   Wire1.begin();
@@ -921,11 +965,15 @@ void setup() {
 
   calibrateSensors();
 
-  Serial.println("Ready. Type g to start Task 2.");
+  lastButtonReading = digitalRead(CONTROL_BUTTON_PIN);
+  stableButtonState = lastButtonReading;
+
+  Serial.println("Ready. Press the mechanical button to start Task 2.");
 }
 
 void loop() {
   mc.resetCommandTimeout();
+  handleControlButton();
   handleSerialCommands();
   runTask2();
   delay(5);

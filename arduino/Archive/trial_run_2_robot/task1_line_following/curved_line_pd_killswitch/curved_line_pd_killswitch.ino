@@ -14,7 +14,7 @@ const int LEFT_DIR = 1;
 const int RIGHT_DIR = -1;
 
 // On our current robot code, forward movement uses negative logical speeds.
-const int FORWARD_SIGN = -1;
+const int FORWARD_SIGN = 1;
 
 // Mechanical button wiring:
 // one side of the button -> GND
@@ -29,7 +29,7 @@ const int MAX_SPEED = 450;
 const int SEARCH_SPEED = 200;
 
 // PD controller values for curved line following.
-float Kp = 0.040;
+float Kp = 0.30;
 float Kd = 0.10;
 
 // =====================
@@ -66,7 +66,6 @@ uint16_t lastLinePosition = LINE_CENTER;
 int lastError = 0;
 
 bool robotEnabled = false;
-bool keyboardControlEnabled = false;
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
 unsigned long lastDebounceTime = 0;
@@ -309,10 +308,12 @@ void followCurvedLinePD() {
   int derivative = error - lastError;
   int correction = (int)(Kp * error + Kd * derivative);
 
-  int leftMagnitude = BASE_SPEED + correction;
-  int rightMagnitude = BASE_SPEED - correction;
+  // Direction flipped: if the robot should turn left but turns right,
+  // this makes the correction act in the opposite direction.
+  int leftMagnitude = BASE_SPEED - correction;
+  int rightMagnitude = BASE_SPEED + correction;
 
-  driveForwardMagnitudes(leftMagnitude, rightMagnitude);
+  driveForwardMagnitudes(rightMagnitude, leftMagnitude);
 
   printDebug(position, error, leftMagnitude, rightMagnitude, activeCount, true);
 
@@ -366,32 +367,8 @@ void runMotorTest() {
 }
 
 void handleSerialCommands() {
-  if (!keyboardControlEnabled) {
-    while (Serial.available()) {
-      Serial.read();
-    }
-    return;
-  }
-
-  if (!Serial.available()) {
-    return;
-  }
-
-  char command = Serial.read();
-
-  if (command == 'm' || command == 'M') {
-    runMotorTest();
-  }
-
-  if (command == 'g' || command == 'G') {
-    robotEnabled = true;
-    lastError = 0;
-    lastLinePosition = LINE_CENTER;
-    Serial.println("GO: curved line PD following enabled.");
-  }
-
-  if (command == 's' || command == 'S') {
-    Serial.println("Keyboard stop disabled. Press the mechanical button to stop motors.");
+  while (Serial.available()) {
+    Serial.read();
   }
 }
 
@@ -407,14 +384,15 @@ void handleControlButton() {
       stableButtonState = reading;
 
       if (stableButtonState == CONTROL_BUTTON_PRESSED) {
-        keyboardControlEnabled = !keyboardControlEnabled;
+        robotEnabled = !robotEnabled;
 
-        if (keyboardControlEnabled) {
-          Serial.println("BUTTON: keyboard control enabled. Type 'm' or 'g'.");
+        if (robotEnabled) {
+          lastError = 0;
+          lastLinePosition = LINE_CENTER;
+          Serial.println("BUTTON: curved line following started.");
         } else {
-          robotEnabled = false;
           stopMotors();
-          Serial.println("BUTTON: motors stopped. Keyboard control disabled.");
+          Serial.println("BUTTON: motors stopped.");
         }
       }
     }
@@ -430,7 +408,8 @@ void handleControlButton() {
 void setup() {
   Serial.begin(115200);
 
-  while (!Serial) {
+  unsigned long serialWaitStartMs = millis();
+  while (!Serial && millis() - serialWaitStartMs < 1500) {
     delay(10);
   }
 
@@ -440,11 +419,8 @@ void setup() {
   Serial.println("Manual QTR curved black line PD following test");
   Serial.println("Pins used: D22 to D30");
   Serial.println("Mechanical control button: D8 to GND.");
-  Serial.println("Press button once to enable keyboard commands.");
-  Serial.println("Press button again to stop motors and disable keyboard commands.");
-  Serial.println("After enabling keyboard control, type:");
-  Serial.println("'m' = motor test");
-  Serial.println("'g' = start curved line following");
+  Serial.println("Press button once to start line following.");
+  Serial.println("Press button again to stop motors.");
   Serial.println();
 
   pinMode(CONTROL_BUTTON_PIN, INPUT_PULLUP);
@@ -468,8 +444,7 @@ void setup() {
   calibrateSensors();
 
   Serial.println("Ready.");
-  Serial.println("Press the mechanical button to enable keyboard control.");
-  Serial.println("Then type 'm' to test motors or 'g' to start following.");
+  Serial.println("Press the mechanical button to start line following.");
   Serial.println("Press the mechanical button again to stop.");
   Serial.println();
 }

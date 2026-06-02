@@ -14,6 +14,7 @@ static bool heartbeatTimeout = false;
 static bool localSwitchEnabled = false;
 static bool wasConnected = false;
 static bool warnedLocalSafetyMode = false;
+static bool rescueLedOverride = false;
 
 static bool lastSwitchReading = HIGH;
 static bool stableSwitchState = HIGH;
@@ -114,6 +115,10 @@ static void blinkSafetyLedRed(unsigned long intervalMs) {
   digitalWrite(RGB_RED_PIN, digitalRead(RGB_RED_PIN) == LOW ? HIGH : LOW);
 }
 
+void setRescueLedOverride(bool enabled) {
+  rescueLedOverride = enabled;
+}
+
 static void updateSafetySwitch() {
   bool reading = digitalRead(BUTTON_PIN);
 
@@ -135,6 +140,12 @@ static void updateSafetySwitch() {
 }
 
 static void updateSafetyLed() {
+  if (rescueLedOverride) {
+    digitalWrite(RGB_RED_PIN, HIGH);
+    digitalWrite(RGB_GREEN_PIN, LOW);
+    return;
+  }
+
   if (robotAllowedToMove()) {
     setSafetyLedOff();
     return;
