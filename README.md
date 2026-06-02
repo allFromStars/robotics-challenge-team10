@@ -20,9 +20,6 @@ The platform utilizes a customized **Event-Driven Non-Blocking State Machine** r
 
 ### Master State Machine
 
-
-
-
 ---
 
 ## ⚙️ Electrical Subsystem Pin Mapping
@@ -88,9 +85,7 @@ The physical wiring configuration of the robot is split cleanly across functiona
         ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
         └── robot_state.h           # Defines structural enum variables representing state variables
 
-
-
-
+``` 
 
 ## Task-by-Task Control Flowcharts
 
