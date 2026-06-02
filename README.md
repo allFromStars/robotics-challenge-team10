@@ -242,6 +242,28 @@ The physical wiring configuration of the robot is split cleanly across functiona
 ---
 
 
+To allow the robot to calculate the cheapest route dynamically, the arena is hardcoded into a 2D byte array (`arenaMap[GRID_HEIGHT][GRID_WIDTH]`). 
+
+**Array Values:** `1` = Grid Line (Weight 1), `2` = Open Field (Weight 2x), `3` = Obstacle (Impassable)
+
+```cpp
+byte arenaMap[9][9] = {
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, 
+  {1, 1, 1, 1, 1, 2, 2, 2, 2}, 
+  {1, 1, 1, 3, 3, 3, 2, 2, 2}, 
+  {1, 1, 1, 1, 1, 2, 2, 2, 2},
+  {1, 1, 1, 1, 1, 2, 2, 2, 2},
+  {1, 1, 1, 3, 2, 2, 2, 2, 2},
+  {1, 1, 1, 3, 2, 2, 2, 2, 2}, 
+  {1, 1, 1, 1, 2, 2, 2, 2, 2}, 
+  {1, 1, 1, 1, 2, 2, 2, 2, 2} 
+};
+
+
+//in path finding code
+int stepWeight = (cellType == 1) ? 1 : (2 * LINE_PREFERENCE_MULTIPLIER);
+```
+
 ## Task-by-Task Control Flowcharts
 
 ### Task 1: Standard Line Tracking
