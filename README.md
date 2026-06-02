@@ -44,6 +44,75 @@ The primary operational logic of the platform is partitioned into three key stat
 | `STATE_CALIBRATING_IR` | **Sensor Baseline:** Samples ambient track light values to map structural line-tracking reflection thresholds. | For calibration |
 | `STATE_EMERGENCY_STOP` | **System Inversion Lockout:** Shuts off motor control PWM lines completely, halts clock counters, and activates blink arrays if safe bounds fail. | Main Safety Overlap |
 
+```mermaid
+graph TD
+    %% Define Node Colors and Styles
+    classDef central fill:#fef08a,stroke:#ca8a04,stroke-width:3px,color:#854d0e,font-weight:bold
+    classDef action fill:#bae6fd,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+    classDef decision fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#4c1d95
+    classDef danger fill:#fecaca,stroke:#dc2626,stroke-width:3px,color:#7f1d1d,font-weight:bold
+    classDef peripheral fill:#e5e5e5,stroke:#525252,stroke-width:2px,color:#171717
+    classDef startNode fill:#bbf7d0,stroke:#16a34a,stroke-width:3px,color:#14532d,font-weight:bold
+
+    %% Entry Point
+    START(["Mission Starts in Arena"]) --> STATE_PLAN
+
+    subgraph Execution_Engine [Core State Loop]
+        
+        %% Central Hub
+        STATE_PLAN["STATE_PLAN<br>Decision Hub"]
+        
+        %% Decision Nodes
+        COND_ARRIVED{"Arrived at<br>Target Coordinate?"}
+        COND_EXIT{"Is Heading<br>to Exit?"}
+        COND_PATH{"Path Calculation<br>Valid?"}
+        COND_OBSTACLE{"Obstacle Present<br>< Threshold mm?"}
+        COND_TERRAIN{"Target Node<br>Terrain?"}
+
+        %% 1. Target Evaluation Block
+        STATE_PLAN --> COND_ARRIVED
+        
+        %% Branch A: Arrived Destination Actions
+        COND_ARRIVED -- Yes --> COND_EXIT
+        COND_EXIT -- Yes --> STATE_ALIGN_AIRLOCK_B["STATE_ALIGN_AIRLOCK_B"]
+        COND_EXIT -- No --> STATE_PLANTING["STATE_PLANTING"]
+        
+        STATE_PLANTING -- "Seed Dropped" --> STATE_ADVANCE_AFTER_PLANTING["STATE_ADVANCE_AFTER_PLANTING"]
+        STATE_ADVANCE_AFTER_PLANTING -- "Next Target Loaded" --> STATE_PLAN
+        STATE_ALIGN_AIRLOCK_B -- "Alignment Done" --> STATE_AIRLOCK_B(["Parked / Mission Complete"])
+        
+        %% Branch B: Standard Node-to-Node Traversal Pipeline
+        COND_ARRIVED -- No --> COND_PATH
+        COND_PATH -- "Calculations Fail" --> STATE_EMERGENCY_STOP["STATE_EMERGENCY_STOP"]
+        COND_PATH -- "Valid Path Loaded" --> STATE_TURN["STATE_TURN"]
+        
+        %% 2. Movement Maneuvers & Proximity Check
+        STATE_TURN -- "Rotation Finished" --> COND_OBSTACLE
+        COND_OBSTACLE -- "Yes (Update Map Weights)" --> STATE_PLAN
+        COND_OBSTACLE -- "No (Path Clear)" --> COND_TERRAIN
+        
+        %% 3. Surface Traversal Primitives
+        COND_TERRAIN -- "Line Track Area" --> STATE_NAVIGATING_LINES["STATE_NAVIGATING_LINES"]
+        COND_TERRAIN -- "Unguided Open Field" --> STATE_NAVIGATING_OPEN["STATE_NAVIGATING_OPEN"]
+        
+        %% 4. Cycle Convergence
+        STATE_NAVIGATING_LINES -- "Reached Node (Sync Memory)" --> STATE_PLAN
+        STATE_NAVIGATING_OPEN -- "Reached Node (Sync Memory)" --> STATE_PLAN
+    end
+
+    %% Active Safety Interrupt Vectors (Dotted Lines)
+    STATE_NAVIGATING_LINES -. "Line Loss / Safety Timeout" .-> STATE_EMERGENCY_STOP
+    STATE_NAVIGATING_OPEN -. "Navigation Error / Drift" .-> STATE_EMERGENCY_STOP
+
+    %% Apply Styles Safely at the Bottom
+    class START startNode
+    class STATE_PLAN central
+    class COND_ARRIVED,COND_EXIT,COND_PATH,COND_OBSTACLE,COND_TERRAIN decision
+    class STATE_ALIGN_AIRLOCK_B,STATE_PLANTING,STATE_ADVANCE_AFTER_PLANTING,STATE_TURN,STATE_NAVIGATING_LINES,STATE_NAVIGATING_OPEN action
+    class STATE_EMERGENCY_STOP danger
+    class STATE_AIRLOCK_B peripheralP
+    STATE_NAVIGATING_OPEN -. "Navigation Error / Drift" .-> STATE_EMERGENCY_STOP
+```
 ---
 
 
