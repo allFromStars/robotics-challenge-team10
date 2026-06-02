@@ -257,7 +257,8 @@ Implements an event-driven intersection parsing system. When an intersection thr
 ### Task 3: Solid Grid Navigation
 Combines a global pathfinding layer with localized line-following execution primitives to evaluate the map and navigate around arena grid layouts safely.
 
-<img width="500" alt="Task 3 Flowchart" src="https://github.com/user-attachments/assets/a0beeca7-9684-4537-9cd6-323a5f174b5b" />
+<img width="1275" height="4727" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (8)" src="https://github.com/user-attachments/assets/88cdd705-640f-4cd4-b467-7063c58c7b88" />
+
 
 ### Task 4: Open Field Dead-Reckoning
 Executes precise maneuvers across track regions lacking explicit physical line guides, leveraging wheel encoder tracking and IMU yaw stability logic to minimize cumulative drift.
@@ -268,6 +269,15 @@ Executes precise maneuvers across track regions lacking explicit physical line g
 A dual-layer **Adaptive Cruise Control (ACC) and Proportional-Integral (PI) Velocity Controller** designed to handle steep grades. Uses active reverse-PWM engine braking downhill and dynamic torque compensation uphill while monitoring obstacle distances ahead.
 
 <img width="500" alt="Task 5 Flowchart" src="https://github.com/user-attachments/assets/acffa5ba-ceba-4e3b-ba33-22e17de81b09" />
+
+
+
+
+
+### Task 7: Obstacle detection and avoidance
+<img width="2093" height="3176" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (9)" src="https://github.com/user-attachments/assets/d51e4458-6d39-4a85-804d-84310e58d862" />
+
+
 
 ### Task 8: Touch-Based Revival
 A hardware-vetted rescue routine. It uses front Time-of-Flight (ToF) metrics to apply a smooth proportional deceleration curve, moving to a low-speed crawl until a physical limit switch triggers an instant motor stop, locking the state and flaring an RGB confirmation signal.
