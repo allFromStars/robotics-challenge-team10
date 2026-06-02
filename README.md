@@ -270,6 +270,15 @@ A dual-layer **Adaptive Cruise Control (ACC) and Proportional-Integral (PI) Velo
 
 <img width="500" alt="Task 5 Flowchart" src="https://github.com/user-attachments/assets/acffa5ba-ceba-4e3b-ba33-22e17de81b09" />
 
+
+
+
+
+### Task 7: Obstacle detection and avoidance
+<img width="2093" height="3176" alt="Flowchart Whiteboard in Bright Green Lime Green Pink Corporate Neon Style (9)" src="https://github.com/user-attachments/assets/d51e4458-6d39-4a85-804d-84310e58d862" />
+
+
+
 ### Task 8: Touch-Based Revival
 A hardware-vetted rescue routine. It uses front Time-of-Flight (ToF) metrics to apply a smooth proportional deceleration curve, moving to a low-speed crawl until a physical limit switch triggers an instant motor stop, locking the state and flaring an RGB confirmation signal.
 
