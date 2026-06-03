@@ -66,15 +66,15 @@ unsigned long turnSettleStartMs = 0;
 // --------------------
 
 const int BASE_SPEED = 280;
-const int SLOW_SPEED = 130;
-const int START_SPEED = 120;
-const int ALIGN_SPEED = 100;
+const int SLOW_SPEED = 180;
+const int START_SPEED = 140;
+const int ALIGN_SPEED = 140;
 const int SEARCH_SPEED = 240;
 const int MAX_SPEED = 360;
-const int EXIT_ROUTE_SPEED = 160;
+const int EXIT_ROUTE_SPEED = 240;
 
-float Kp = 0.040;
-float Kd = 0.10;
+float Kp = 0.060;
+float Kd = 0.12;
 // --------------------
 // IMU turn tuning
 // --------------------
@@ -86,12 +86,12 @@ float Kd = 0.10;
 const float RIGHT_TURN_ANGLE_DEG = -90.0;
 const float LEFT_TURN_ANGLE_DEG = 90.0;
 
-float turnKp = 25.5;
-float turnKd = 1.8;
-float turnKi = 2;
+float turnKp = 19.5;
+float turnKd = 6.5;
+float turnKi = 1.8;
 
 const int TURN_MOTOR_MAX_LIMIT = 300;
-const int TURN_MOTOR_MIN_LIMIT = 100;
+const int TURN_MOTOR_MIN_LIMIT = 200;
 const float TURN_INTEGRAL_LIMIT = 1000.0;
 
 const float GYRO_DEADBAND_DPS = 0.1;
