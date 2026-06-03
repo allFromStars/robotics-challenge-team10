@@ -219,6 +219,7 @@ void setup() {
 }
 
 void loop() {
+  yield();
   refreshAllSensors();
   updateRobotCommunication();
   mc.resetCommandTimeout();

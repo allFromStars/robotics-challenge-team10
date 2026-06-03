@@ -2,9 +2,12 @@
 #include "ICM_20948.h"
 #include <Motoron.h>
 #include <MFRC522_I2C.h>
+#include <MiniMessenger.h>
+#include <string.h>
+#include "../../Robot_Main/secrets.h"
 
 // ============================================================
-// Task 2: Base Exit Route + IMU 90 Turns + RFID Stop
+// Task 2: Base Exit Route + IMU Turns + RFID-Gated Navigation
 // ============================================================
 //
 // Route:
@@ -17,7 +20,14 @@
 // -> IMU left 90
 // -> reacquire B tag line
 // -> follow slowly
-// -> stop on first RFID tag detected
+// -> detect RFID tag
+// -> request Airlock B from server
+// -> wait for Airlock B accepted
+// -> keep following to next junction
+// -> IMU left 90
+// -> follow to next junction
+// -> IMU right 90
+// -> follow for 3 seconds as a temporary stop case
 //
 // This version uses the ICM-20948 gyroscope yaw integration for turning.
 // It keeps the early line-stop logic during turns.
@@ -27,6 +37,7 @@
 // --------------------
 
 MotoronI2C mc(16);
+MiniMessenger messenger;
 
 const int LEFT_MOTOR_CHANNEL = 1;
 const int RIGHT_MOTOR_CHANNEL = 2;
@@ -42,6 +53,29 @@ const int FORWARD_SIGN = 1;
 const int CONTROL_BUTTON_PIN = D8;
 const int CONTROL_BUTTON_PRESSED = LOW;
 const unsigned long DEBOUNCE_DELAY_MS = 50;
+
+// --------------------
+// MiniMessenger setup
+// --------------------
+
+const char TASK2_BOARD_ID[] = "treadzeppelin";
+
+const unsigned long WIFI_REGISTER_INTERVAL_MS = 10000;
+const unsigned long NETWORK_STATUS_PRINT_MS = 2000;
+const unsigned long SERVER_REPLY_TIMEOUT_MS = 5000;
+const unsigned long SERVER_REQUEST_RETRY_MS = 1500;
+
+bool wasNetworkConnected = false;
+unsigned long lastRegisterMs = 0;
+unsigned long lastNetworkStatusPrintMs = 0;
+unsigned long serverRequestStartedMs = 0;
+unsigned long lastServerRequestMs = 0;
+
+bool airlockReplyReceived = false;
+bool airlockAccepted = false;
+char requestedAirlock = '\0';
+char airlockReplyAirlock = '\0';
+char activeAirlockTagId[16] = "";
 
 // --------------------
 // IMU setup
@@ -65,13 +99,10 @@ unsigned long turnSettleStartMs = 0;
 // Speed tuning
 // --------------------
 
-const int BASE_SPEED = 280;
-const int SLOW_SPEED = 180;
-const int START_SPEED = 140;
-const int ALIGN_SPEED = 140;
-const int SEARCH_SPEED = 240;
+const int SPEED_CAREFUL = 140;
+const int SPEED_LINE = 220;
+const int SPEED_FAST = 280;
 const int MAX_SPEED = 360;
-const int EXIT_ROUTE_SPEED = 240;
 
 float Kp = 0.060;
 float Kd = 0.12;
@@ -90,8 +121,8 @@ float turnKp = 19.5;
 float turnKd = 6.5;
 float turnKi = 1.8;
 
-const int TURN_MOTOR_MAX_LIMIT = 300;
-const int TURN_MOTOR_MIN_LIMIT = 200;
+const int TURN_MOTOR_MAX_LIMIT = 280;
+const int TURN_MOTOR_MIN_LIMIT = 180;
 const float TURN_INTEGRAL_LIMIT = 1000.0;
 
 const float GYRO_DEADBAND_DPS = 0.1;
@@ -137,14 +168,165 @@ unsigned long baseJunctionFirstSeenMs = 0;
 #define RFID_ADDR 0x28
 MFRC522_I2C rfid(RFID_ADDR, -1, &Wire1);
 
-// Only needed when STOP_ON_ANY_RFID_AFTER_SECOND_TURN is false.
+// Only needed when ACCEPT_ANY_RFID_AS_B_TAG is false.
 const String TARGET_B_UID = "REPLACE_WITH_B_UID";
 
-const bool STOP_ON_ANY_RFID_AFTER_SECOND_TURN = true;
+const bool ACCEPT_ANY_RFID_AS_B_TAG = true;
 
 String latestUid = "";
 bool anyRfidDetected = false;
 bool bTagDetected = false;
+
+// --------------------
+// Communication helpers
+// --------------------
+
+bool getValueForKey(const char *msg, const char *key, char *out, size_t outSize) {
+  const char *start = strstr(msg, key);
+  if (!start) {
+    return false;
+  }
+
+  start += strlen(key);
+  size_t i = 0;
+
+  while (start[i] != '\0' && start[i] != ' ' && i < outSize - 1) {
+    out[i] = start[i];
+    i++;
+  }
+
+  out[i] = '\0';
+  return i > 0;
+}
+
+bool getBoolForKey(const char *msg, const char *key, bool defaultValue) {
+  char value[12];
+
+  if (!getValueForKey(msg, key, value, sizeof(value))) {
+    return defaultValue;
+  }
+
+  return strcmp(value, "true") == 0 || strcmp(value, "1") == 0;
+}
+
+void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payload, size_t length) {
+  if (length == 6 || length == 21) {
+    return;
+  }
+
+  char msg[128];
+  size_t copyLen = (length < sizeof(msg) - 1) ? length : sizeof(msg) - 1;
+  memcpy(msg, payload, copyLen);
+  msg[copyLen] = '\0';
+
+  Serial.print("Message from ");
+  Serial.print(metadata.fromBoardId);
+  Serial.print(" to ");
+  Serial.print(metadata.target);
+  Serial.print(": ");
+  Serial.println(msg);
+
+  if (strstr(msg, "type=openAirlockReply")) {
+    char airlockValue[4];
+    airlockReplyReceived = true;
+    airlockAccepted = getBoolForKey(msg, "accepted=", false);
+
+    if (getValueForKey(msg, "airlock=", airlockValue, sizeof(airlockValue))) {
+      airlockReplyAirlock = airlockValue[0];
+    }
+
+    Serial.print("AIRLOCK reply: airlock=");
+    Serial.print(airlockReplyAirlock);
+    Serial.print(" accepted=");
+    Serial.println(airlockAccepted ? "true" : "false");
+  }
+}
+
+void registerWithServer() {
+  char reg[80];
+  snprintf(
+    reg,
+    sizeof(reg),
+    "type=register team_id=%s board_id=%s",
+    GROUP_ID,
+    TASK2_BOARD_ID
+  );
+
+  bool sent = messenger.sendToBoard("server", reg);
+  Serial.println(sent ? "Register sent to server." : "Register send failed.");
+}
+
+void initTask2Communication() {
+  messenger.onMessage(onCommunicationMessage);
+  messenger.begin(
+    WIFI_SSID,
+    WIFI_PASSWORD,
+    BROKER_HOST,
+    BROKER_PORT,
+    GROUP_ID,
+    TASK2_BOARD_ID
+  );
+
+  Serial.println("Network connecting...");
+}
+
+void updateTask2Communication() {
+  messenger.loop();
+
+  bool connected = messenger.isConnected();
+
+  if (connected != wasNetworkConnected) {
+    wasNetworkConnected = connected;
+    Serial.print("Network/MQTT: ");
+    Serial.println(connected ? "connected" : "disconnected");
+  }
+
+  if (!connected && millis() - lastNetworkStatusPrintMs >= NETWORK_STATUS_PRINT_MS) {
+    lastNetworkStatusPrintMs = millis();
+    Serial.println("Waiting for WiFi/MQTT connection...");
+  }
+
+  if (connected && (lastRegisterMs == 0 || millis() - lastRegisterMs >= WIFI_REGISTER_INTERVAL_MS)) {
+    lastRegisterMs = millis();
+    registerWithServer();
+  }
+}
+
+bool requestOpenAirlock(char airlock, const char *tagId) {
+  char msg[96];
+
+  airlockReplyReceived = false;
+  airlockAccepted = false;
+  requestedAirlock = airlock;
+  airlockReplyAirlock = airlock;
+
+  if (!messenger.isConnected()) {
+    Serial.println("Airlock request blocked: MQTT not connected.");
+    return false;
+  }
+
+  snprintf(
+    msg,
+    sizeof(msg),
+    "type=openAirlock airlock=%c tag_id=%s board_id=%s",
+    airlock,
+    tagId,
+    TASK2_BOARD_ID
+  );
+
+  bool sent = messenger.sendToBoard("server", msg);
+  Serial.print(sent ? "Airlock request sent: " : "Airlock request send failed: ");
+  Serial.println(msg);
+  return sent;
+}
+
+bool airlockRequestAccepted() {
+  return airlockReplyReceived && airlockAccepted && airlockReplyAirlock == requestedAirlock;
+}
+
+bool airlockRequestRejected() {
+  return airlockReplyReceived && !airlockAccepted;
+}
 
 // --------------------
 // Task 2 state machine
@@ -160,7 +342,15 @@ enum Task2State {
   T2_TURN_LEFT_TO_B_LINE,
   T2_REACQUIRE_B_LINE,
   T2_APPROACH_B_TAG,
-  T2_ALIGN_ON_B_TAG,
+  T2_REQUEST_AIRLOCK_B,
+  T2_WAIT_AIRLOCK_B,
+  T2_FOLLOW_AFTER_B_TAG_TO_JUNCTION,
+  T2_TURN_LEFT_AFTER_B_TAG,
+  T2_REACQUIRE_AFTER_B_TAG_LEFT,
+  T2_FOLLOW_TO_SECOND_JUNCTION,
+  T2_TURN_RIGHT_AFTER_SECOND_JUNCTION,
+  T2_REACQUIRE_AFTER_SECOND_RIGHT,
+  T2_FINAL_FOLLOW_TEMP_STOP,
   T2_DONE,
   T2_FAILSAFE_STOP
 };
@@ -169,7 +359,6 @@ Task2State task2State = T2_IDLE;
 
 unsigned long stateStartMs = 0;
 unsigned long taskStartMs = 0;
-unsigned long bTagDetectedMs = 0;
 unsigned long lineLostStartMs = 0;
 unsigned long lastDebugPrintMs = 0;
 unsigned long reacquireCenteredStartMs = 0;
@@ -185,8 +374,8 @@ unsigned long lastDebounceTime = 0;
 const unsigned long EXIT_ROUTE_JUNCTION_IGNORE_MS = 800;
 const unsigned long EXIT_ROUTE_MAX_STRAIGHT_MS = 15000;
 
-const unsigned long RFID_STOP_OFFSET_MS = 150;
-const unsigned long TASK2_TIMEOUT_MS = 45000;
+const unsigned long FINAL_FOLLOW_TEMP_STOP_MS = 3000;
+const unsigned long TASK2_TIMEOUT_MS = 70000;
 const unsigned long LOST_LINE_TIMEOUT_MS = 1200;
 
 const unsigned long LEAVE_DEPLOYMENT_MIN_MS = 200;
@@ -201,11 +390,11 @@ const unsigned long REACQUIRE_CENTER_STABLE_MS = 250;
 // Ignore line detections briefly at the start of each turn, so the robot
 // does not immediately stop on the line or junction it is leaving.
 const unsigned long RIGHT_TURN_IGNORE_LINE_MS = 600;
-const unsigned long LEFT_TURN_IGNORE_LINE_MS = 250;
+const unsigned long TURN_IGNORE_LINE_MS = 250;
 
 // Early line-stop is only allowed after the robot has already turned a
 // reasonable amount. Right turn starts from a junction, so it uses IMU only.
-const float LEFT_TURN_MIN_EARLY_STOP_DEG = 45.0;
+const float TURN_MIN_EARLY_STOP_DEG = 45.0;
 
 // --------------------
 // Motor helpers
@@ -556,9 +745,11 @@ bool baseJunctionStable() {
 }
 
 bool lineReacquired() {
+  int currentError = (int)lastLinePosition - LINE_CENTER;
+
   return lineDetected &&
          !baseJunctionDetected &&
-         abs(lastError) <= REACQUIRE_MAX_ABS_ERROR &&
+         abs(currentError) <= REACQUIRE_MAX_ABS_ERROR &&
          activeSensorCount >= 1 &&
          activeSensorCount <= 5;
 }
@@ -616,7 +807,7 @@ void updateRfid() {
   Serial.println(latestUid);
 
   anyRfidDetected = true;
-  bTagDetected = STOP_ON_ANY_RFID_AFTER_SECOND_TURN || latestUid == TARGET_B_UID;
+  bTagDetected = ACCEPT_ANY_RFID_AS_B_TAG || latestUid == TARGET_B_UID;
 
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
@@ -629,9 +820,9 @@ void updateRfid() {
 void followLinePD(int baseSpeed) {
   if (!lineDetected) {
     if (lastError < 0) {
-      turnInPlace(-1, SEARCH_SPEED);
+      turnInPlace(-1, SPEED_LINE);
     } else {
-      turnInPlace(1, SEARCH_SPEED);
+      turnInPlace(1, SPEED_LINE);
     }
     return;
   }
@@ -650,6 +841,9 @@ void followLinePD(int baseSpeed) {
 void enterState(Task2State nextState) {
   task2State = nextState;
   stateStartMs = millis();
+  baseJunctionFirstSeenMs = 0;
+  reacquireCenteredStartMs = 0;
+  lineLostStartMs = 0;
 
   Serial.print("Task 2 state -> ");
   Serial.println((int)task2State);
@@ -667,11 +861,17 @@ void resetTask2Run() {
   lastLinePosition = LINE_CENTER;
   baseJunctionFirstSeenMs = 0;
   reacquireCenteredStartMs = 0;
-  bTagDetectedMs = 0;
   lineLostStartMs = 0;
   latestUid = "";
   anyRfidDetected = false;
   bTagDetected = false;
+  activeAirlockTagId[0] = '\0';
+  airlockReplyReceived = false;
+  airlockAccepted = false;
+  requestedAirlock = '\0';
+  airlockReplyAirlock = '\0';
+  serverRequestStartedMs = 0;
+  lastServerRequestMs = 0;
   resetImuTurn();
   taskStartMs = millis();
 }
@@ -739,7 +939,7 @@ void runTask2() {
       task2State != T2_IDLE &&
       task2State != T2_DONE &&
       task2State != T2_FAILSAFE_STOP) {
-    enterFailsafe("Task 2 exceeded 45 seconds");
+    enterFailsafe("Task 2 exceeded timeout");
     return;
   }
 
@@ -749,7 +949,7 @@ void runTask2() {
       break;
 
     case T2_LEAVE_DEPLOYMENT_AREA:
-      driveForwardMagnitudes(START_SPEED, START_SPEED);
+      driveForwardMagnitudes(SPEED_CAREFUL, SPEED_CAREFUL);
 
       if (lineDetected && millis() - stateStartMs > LEAVE_DEPLOYMENT_MIN_MS) {
         enterState(T2_FOLLOW_DEPLOYMENT_LINE);
@@ -757,7 +957,7 @@ void runTask2() {
       break;
 
     case T2_FOLLOW_DEPLOYMENT_LINE:
-      followLinePD(BASE_SPEED);
+      followLinePD(SPEED_FAST);
 
       if (baseJunctionStable()) {
         enterState(T2_TURN_RIGHT_TO_EXIT_ROUTE);
@@ -777,7 +977,7 @@ void runTask2() {
       break;
 
     case T2_REACQUIRE_EXIT_ROUTE:
-      followLinePD(SLOW_SPEED);
+      followLinePD(SPEED_LINE);
 
       if (lineCenteredAfterReacquire()) {
         enterState(T2_FOLLOW_EXIT_ROUTE_STRAIGHT);
@@ -789,7 +989,7 @@ void runTask2() {
       break;
 
     case T2_FOLLOW_EXIT_ROUTE_STRAIGHT:
-      followLinePD(EXIT_ROUTE_SPEED);
+      followLinePD(SPEED_LINE);
 
       if (millis() - stateStartMs > EXIT_ROUTE_JUNCTION_IGNORE_MS &&
           baseJunctionStable()) {
@@ -806,8 +1006,8 @@ void runTask2() {
       break;
 
     case T2_TURN_LEFT_TO_B_LINE:
-      if (imuTurnPassedAngle(LEFT_TURN_MIN_EARLY_STOP_DEG) &&
-          validLineForEarlyTurnStop(LEFT_TURN_IGNORE_LINE_MS)) {
+      if (imuTurnPassedAngle(TURN_MIN_EARLY_STOP_DEG) &&
+          validLineForEarlyTurnStop(TURN_IGNORE_LINE_MS)) {
         stopMotors();
         resetImuTurn();
         lastError = 0;
@@ -824,7 +1024,7 @@ void runTask2() {
       break;
 
     case T2_REACQUIRE_B_LINE:
-      driveForwardMagnitudes(SLOW_SPEED, SLOW_SPEED);
+      driveForwardMagnitudes(SPEED_CAREFUL, SPEED_CAREFUL);
 
       if (lineReacquired()) {
         lastError = 0;
@@ -837,11 +1037,13 @@ void runTask2() {
       break;
 
     case T2_APPROACH_B_TAG:
-      followLinePD(SLOW_SPEED);
+      followLinePD(SPEED_CAREFUL);
 
       if (bTagDetected) {
-        bTagDetectedMs = millis();
-        enterState(T2_ALIGN_ON_B_TAG);
+        latestUid.toCharArray(activeAirlockTagId, sizeof(activeAirlockTagId));
+        lastServerRequestMs = 0;
+        serverRequestStartedMs = 0;
+        enterState(T2_REQUEST_AIRLOCK_B);
       }
 
       if (lineLostTooLong()) {
@@ -849,12 +1051,161 @@ void runTask2() {
       }
       break;
 
-    case T2_ALIGN_ON_B_TAG:
-      driveForwardMagnitudes(ALIGN_SPEED, ALIGN_SPEED);
+    case T2_REQUEST_AIRLOCK_B:
+      stopMotors();
 
-      if (millis() - bTagDetectedMs > RFID_STOP_OFFSET_MS) {
+      if (activeAirlockTagId[0] == '\0') {
+        enterFailsafe("RFID B detected but tag id was empty");
+        break;
+      }
+
+      if (lastServerRequestMs != 0 && millis() - lastServerRequestMs < SERVER_REQUEST_RETRY_MS) {
+        break;
+      }
+
+      lastServerRequestMs = millis();
+
+      if (requestOpenAirlock('B', activeAirlockTagId)) {
+        serverRequestStartedMs = millis();
+        lastServerRequestMs = serverRequestStartedMs;
+        Serial.print("Airlock B request sent with tag ");
+        Serial.println(activeAirlockTagId);
+        enterState(T2_WAIT_AIRLOCK_B);
+      } else {
+        Serial.println("Airlock B request failed to send; retrying.");
+      }
+      break;
+
+    case T2_WAIT_AIRLOCK_B:
+      stopMotors();
+
+      if (airlockRequestAccepted()) {
+        Serial.println("Airlock B accepted. Continuing to first post-B junction.");
+        enterState(T2_FOLLOW_AFTER_B_TAG_TO_JUNCTION);
+        break;
+      }
+
+      if (airlockRequestRejected()) {
+        Serial.println("Airlock B rejected. Retrying request.");
+        enterState(T2_REQUEST_AIRLOCK_B);
+        break;
+      }
+
+      if (millis() - serverRequestStartedMs >= SERVER_REPLY_TIMEOUT_MS &&
+          millis() - lastServerRequestMs >= SERVER_REQUEST_RETRY_MS) {
+        lastServerRequestMs = millis();
+        serverRequestStartedMs = millis();
+        Serial.println("Airlock B reply timeout; resending request.");
+        requestOpenAirlock('B', activeAirlockTagId);
+      }
+      break;
+
+    case T2_FOLLOW_AFTER_B_TAG_TO_JUNCTION:
+      followLinePD(SPEED_CAREFUL);
+
+      if (millis() - stateStartMs > EXIT_ROUTE_JUNCTION_IGNORE_MS &&
+          baseJunctionStable()) {
+        enterState(T2_TURN_LEFT_AFTER_B_TAG);
+      }
+
+      if (millis() - stateStartMs > EXIT_ROUTE_MAX_STRAIGHT_MS) {
+        enterFailsafe("Could not find first junction after B tag");
+      }
+
+      if (lineLostTooLong()) {
+        enterFailsafe("Line lost after B tag");
+      }
+      break;
+
+    case T2_TURN_LEFT_AFTER_B_TAG:
+      if (imuTurnPassedAngle(TURN_MIN_EARLY_STOP_DEG) &&
+          validLineForEarlyTurnStop(TURN_IGNORE_LINE_MS)) {
+        stopMotors();
+        resetImuTurn();
+        lastError = 0;
+        baseJunctionFirstSeenMs = 0;
+        enterState(T2_FOLLOW_TO_SECOND_JUNCTION);
+        break;
+      }
+
+      if (runImuTurn(LEFT_TURN_ANGLE_DEG)) {
+        lastError = 0;
+        lastLinePosition = LINE_CENTER;
+        enterState(T2_REACQUIRE_AFTER_B_TAG_LEFT);
+      }
+      break;
+
+    case T2_REACQUIRE_AFTER_B_TAG_LEFT:
+      driveForwardMagnitudes(SPEED_CAREFUL, SPEED_CAREFUL);
+
+      if (lineReacquired()) {
+        lastError = 0;
+        baseJunctionFirstSeenMs = 0;
+        enterState(T2_FOLLOW_TO_SECOND_JUNCTION);
+      }
+
+      if (millis() - stateStartMs > REACQUIRE_TIMEOUT_MS) {
+        enterFailsafe("Could not reacquire line after first post-B left turn");
+      }
+      break;
+
+    case T2_FOLLOW_TO_SECOND_JUNCTION:
+      followLinePD(SPEED_CAREFUL);
+
+      if (millis() - stateStartMs > EXIT_ROUTE_JUNCTION_IGNORE_MS &&
+          baseJunctionStable()) {
+        enterState(T2_TURN_RIGHT_AFTER_SECOND_JUNCTION);
+      }
+
+      if (millis() - stateStartMs > EXIT_ROUTE_MAX_STRAIGHT_MS) {
+        enterFailsafe("Could not find second junction after B tag");
+      }
+
+      if (lineLostTooLong()) {
+        enterFailsafe("Line lost before second junction after B tag");
+      }
+      break;
+
+    case T2_TURN_RIGHT_AFTER_SECOND_JUNCTION:
+      if (imuTurnPassedAngle(TURN_MIN_EARLY_STOP_DEG) &&
+          validLineForEarlyTurnStop(TURN_IGNORE_LINE_MS)) {
+        stopMotors();
+        resetImuTurn();
+        lastError = 0;
+        enterState(T2_FINAL_FOLLOW_TEMP_STOP);
+        break;
+      }
+
+      if (runImuTurn(RIGHT_TURN_ANGLE_DEG)) {
+        lastError = 0;
+        lastLinePosition = LINE_CENTER;
+        enterState(T2_REACQUIRE_AFTER_SECOND_RIGHT);
+      }
+      break;
+
+    case T2_REACQUIRE_AFTER_SECOND_RIGHT:
+      driveForwardMagnitudes(SPEED_CAREFUL, SPEED_CAREFUL);
+
+      if (lineReacquired()) {
+        lastError = 0;
+        enterState(T2_FINAL_FOLLOW_TEMP_STOP);
+      }
+
+      if (millis() - stateStartMs > REACQUIRE_TIMEOUT_MS) {
+        enterFailsafe("Could not reacquire line after second post-B right turn");
+      }
+      break;
+
+    case T2_FINAL_FOLLOW_TEMP_STOP:
+      followLinePD(SPEED_CAREFUL);
+
+      if (millis() - stateStartMs > FINAL_FOLLOW_TEMP_STOP_MS) {
         stopMotors();
         enterState(T2_DONE);
+      }
+
+      if (lineLostTooLong()) {
+        enterFailsafe("Line lost during final temporary follow");
       }
       break;
 
@@ -932,13 +1283,15 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Task 2: scripted base exit route + IMU 90 turns + RFID stop");
+  Serial.println("Task 2: scripted base exit route + RFID-gated junction navigation");
   Serial.println("Mechanical control button: D8 to GND.");
   Serial.println("Press button once to start Task 2.");
   Serial.println("Press button again to stop motors.");
-  Serial.println("Current mode: stop on any RFID after second turn.");
+  Serial.println("Current mode: request Airlock B after RFID, then left at first junction, right at second, stop after 3s.");
 
   pinMode(CONTROL_BUTTON_PIN, INPUT_PULLUP);
+
+  initTask2Communication();
 
   Wire.begin();
   Wire1.begin();
@@ -973,6 +1326,7 @@ void setup() {
 
 void loop() {
   mc.resetCommandTimeout();
+  updateTask2Communication();
   handleControlButton();
   handleSerialCommands();
   runTask2();
