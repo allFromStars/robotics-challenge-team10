@@ -1,4 +1,4 @@
-# UCL Year 1 Robotics Challenge | Team 10
+# UCL Year 1 Robotics Challenge | Team 10 
 
 [![UCL Engineering](https://img.shields.io/badge/UCL-Engineering-lightgrey?style=flat-square&color=blue)](https://www.ucl.ac.uk/)
 [![Framework](https://img.shields.io/badge/Framework-Arduino%20%2F%20C%2B%2B-orange?style=flat-square)](https://www.arduino.cc/)
@@ -116,10 +116,10 @@ The primary operational logic of the platform is partitioned into three key stat
 #### 2. Task-Specific Operations
 | State Identifier | System Behavior | Mission Context |
 | :--- | :--- | :--- |
-| `STATE_PLANTING` | **Payload Deployment:** Suspends motion parameters completely over a node coordinate and engages the physical servo deployment system. | Activate planting mechanism |
-| `STATE_RESCUE_MODE` | **Active Proximity Chase:** Deploys front-facing ToF linear distance scaling loops to decelerate toward a target vehicle, tracking path boundaries. | Revive another robot using bumper |
-| `STATE_REVIVED_RETURN` | **Extraction Route:** Re-initializes wheel orientations, shifts targeting registers back to home coordinates, and begins tracking base paths. | Post-Rescue Return Sequence |
-| `STATE_RAMP` | **Grade Acceleration:** Activates high-torque velocity adjustments and ultrasonic/ToF wall alignment vectors. | Navigate airlock at an incline |
+| `STATE_PLANTING` | **Payload Deployment:** Suspends motion parameters completely over a node coordinate and engages the physical servo seed mechanism. | Activate planting mechanism |
+| `STATE_RESCUE_MODE` | **Active Proximity Chase:** Uses front ToF sensors to revive another robot, decelerating as it gets closer, until robot is tapped (detected using front bumper switch). | Revive another robot using bumper |
+| `STATE_REVIVED_RETURN` | **Extraction Route:** Reinitialises system, determines current location and continues plan. | Post-Rescue Return Sequence |
+| `STATE_RAMP` | **Grade Acceleration:** Activates high-torque mode to clear the airlock. Uses side time of flight sensors to wall follow, and front sensors to prevent crashes with robots in front. | Navigate airlock at an incline |
 
 #### 3. Initialisation & Hardware Fail-Safes
 | State Identifier | System Behavior | Mission Context |
@@ -311,6 +311,3 @@ A map based obstacle avoidance routine. The robot checks the front Time-of-Fligh
 A hardware-vetted rescue routine. It uses front Time-of-Flight (ToF) metrics to apply a smooth proportional deceleration curve, moving to a low-speed crawl until a physical limit switch triggers an instant motor stop, locking the state and flaring an RGB confirmation signal.
 
 <img width="500" alt="Task 8 Flowchart" src="https://github.com/user-attachments/assets/c269a279-673c-473d-a200-3dbf73e8475a" />
-
-
-
