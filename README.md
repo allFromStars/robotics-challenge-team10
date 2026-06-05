@@ -209,10 +209,10 @@ The physical wiring configuration of the robot is split cleanly across functiona
 | **Motor Controller** | `Wire1 I2C` | Motoron M3S550 serial control interface |
 | **Left Motor** | `Motoron CH1` | Left drivetrain power output channel |
 | **Right Motor** | `Motoron CH2` | Right drivetrain power output channel |
-| **Left Encoder A** | `D2` | High-speed primary encoder interrupt input |
-| **Left Encoder B** | `D3` | Secondary phase input for direction resolution |
-| **Right Encoder A** | `D4` | High-speed primary encoder interrupt input |
-| **Right Encoder B** | `D5` | Secondary phase input for direction resolution |
+| **Left Encoder A** | `D38` | High-speed primary encoder interrupt input |
+| **Left Encoder B** | `D36` | Secondary phase input for direction resolution |
+| **Right Encoder A** | `D39` | High-speed primary encoder interrupt input |
+| **Right Encoder B** | `D37` | Secondary phase input for direction resolution |
 
 ### 2. Buttons and Status Indicators
 | Component / Signal | Pin / Interface | Technical Description |
