@@ -17,11 +17,11 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
 ## 📂 Repository File Architecture
 
 ```text
-├── .gitignore                      # Excludes local configuration and IDE build directories
-├── README.md                       # Primary project documentation and structural guides
+├── .gitignore                      
+├── README.md                       # Project documentation
 └── arduino/                        # Master microcontroller software suite
-    ├── Archive/                    # Historical testing snapshots and deprecated modules
-    └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
+    ├── Archive/                    # Old testing code and trial runs
+    └── Robot_Main/                 # Main folder
         ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
         ├── Hardware.ino            # Low-level control and planting mechanism code.
         ├── IRCalibration.ino       # Computes sensor normalisation bounds for raw surface reflectivity
