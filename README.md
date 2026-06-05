@@ -23,15 +23,17 @@ An advanced, event-driven autonomous mobile robot platform developed for the Ter
     ├── Archive/                    # Historical testing snapshots and deprecated modules
     └── Robot_Main/                 # Production source directories (Modular multi-tab IDE project)
         ├── Communication.ino       # Manages incoming/outgoing serial telemetry commands
-        ├── Hardware.ino            # Low-level driver configurations for motor channels and VCC rails
-        ├── IRCalibration.ino       # Computes sensor normalization bounds for raw surface reflectivity
-        ├── Navigation.ino          # Houses motion primitives, line-following loops, and steering PD logic
-        ├── PathFinding.ino         # Solves global route calculations via Dijkstra grid node matrices
-        ├── Robot_Main.ino          # Global framework entry point; executes setup() and core state switch
+        ├── Hardware.ino            # Low-level control and planting mechanism code.
+        ├── IRCalibration.ino       # Computes sensor normalisation bounds for raw surface reflectivity
+        ├── Navigation.ino          # Houses motion primitives, line-following loops, and wall following logic.
+        ├── PathFinding.ino         # Calculate route using weighted BFS
+        ├── Robot_Main.ino          # [MAIN] Runs main switch case. Links all states here.
         ├── Sensors.ino             # Polling engines for active ToF fields and SPI RFID scanners
-        ├── config.h                # Global calibration parameters, target speeds, and controller gains
+        ├── config.h                # Global calibration parameters, target speeds, and controller constants
         ├── pins.h                  # Hardwired microcontroller GPIO and interface channel mappings
         └── robot_state.h           # Defines structural enum variables representing state variables
+        └── Task2BaseExit.ino       # Logic to navigate the base to enter base. 
+        
 
 ``` 
 

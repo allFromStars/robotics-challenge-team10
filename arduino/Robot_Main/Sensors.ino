@@ -5,11 +5,11 @@ bool tofHistoryReady1 = false, tofHistoryReady2 = false;
 bool tofHistoryReady3 = false, tofHistoryReady4 = false;
 uint8_t rawFrame1[16], rawFrame2[16], rawFrame3[16], rawFrame4[16];
 
-// ============================================================
+
 // Sensor module overview
-// ============================================================
+
 // This file keeps all sensor polling and sensor calibration helpers in one
-// place. During the viva, the key point is that Robot_Main.ino calls
+// place. Robot_Main.ino calls
 // refreshAllSensors() every loop, so control and safety decisions use the
 // latest available IR, RFID, TOF, and IMU readings.
 

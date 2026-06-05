@@ -1,6 +1,6 @@
-// ============================================================
+
 // IRCalibration.ino - IR Reflectance Calibration
-// ============================================================
+
 // 
 // The IR array does not use one fixed raw threshold for every surface. During
 // calibration, each sensor records its own minimum and maximum discharge time

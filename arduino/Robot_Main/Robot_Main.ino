@@ -383,33 +383,27 @@ void loop() {
     else if (cmd == 't' || cmd == 'T') {  
       //serial.println("\n--- [TEST] MOCK SERVER COORDINATE TEST ---");
 
-      // 1. Pretend the server just told us a tag is at X: 2, Y: 8
       int mockServerX = 9;
       int mockServerY = 3;
 
 //       Serial.print("Server Raw Input: (X: ");
 //       Serial.print(mockServerX); Serial.print(", Y: "); Serial.print(mockServerY); //serial.println(")");
 
-      // 2. Run it through your conversion function
       Coordinate translated = convertServerToInternal(mockServerX, mockServerY);
 
-      // 3. Print the result that the pathfinder will actually use
 //       Serial.print("Robot Translated: (X: ");
 //       Serial.print(translated.x); Serial.print(", Y: "); Serial.print(translated.y); //serial.println(")");
       
       //serial.println("------------------------------------------");
 
-      // 1. Pretend the server just told us a tag is at X: 2, Y: 8
       mockServerX = 8;
       mockServerY = 7;
 
 //       Serial.print("Server Raw Input: (X: ");
 //       Serial.print(mockServerX); Serial.print(", Y: "); Serial.print(mockServerY); //serial.println(")");
 
-      // 2. Run it through your conversion function
       translated = convertServerToInternal(mockServerX, mockServerY);
 
-      // 3. Print the result that the pathfinder will actually use
 //       Serial.print("Robot Translated: (X: ");
 //       Serial.print(translated.x); Serial.print(", Y: "); Serial.print(translated.y); //serial.println(")");
     }
@@ -636,7 +630,7 @@ void loop() {
 
       switch (plantingStep) {
         
-        // 0: Scan RFID & Request Fertility Check ---
+        // Scan RFID & Request Fertility Check ---
         case 0: {
           //serial.println("[PLANTER] Arrived at target node. Scanning RFID tag...");
           
@@ -666,7 +660,7 @@ void loop() {
           break;
         }
 
-        // 1: Wait for Server Fertility Confirmation ---
+        // Wait for Server Fertility Confirmation ---
         case 1: {
           // Check if the MQTT callback has updated our fertility status
           if (fertilityReplyReady()) {
@@ -689,7 +683,7 @@ void loop() {
           break;
         }
 
-        // 2: Physical Deployment 
+        // Physical Deployment 
         case 2: {
           if (updatePlanting()) {
             // Physical hardware actions completed successfully!
@@ -934,7 +928,7 @@ void loop() {
           break;
         }
 
-        // --- STEP 6: Final Shutdown ---
+        // Final Shutdown 
         case 6:
           stopMotors();
           break;
@@ -942,10 +936,8 @@ void loop() {
       break;
     }
     case STATE_DEBUG: {
-      // 1. Keep motors powered down so you can spin the wheels safely by hand
       stopMotors();
 
-      // 2. Throttled print timer to protect the Mbed OS WiFi thread
       static unsigned long lastEncoderPrintMs = 0;
       if (millis() - lastEncoderPrintMs >= 200) { // Updates 5 times a second
         lastEncoderPrintMs = millis();
