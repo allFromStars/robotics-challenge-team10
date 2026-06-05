@@ -1,12 +1,14 @@
-// ============================================================
-// Navigation.ino - Line + RFID Node Navigation
-// ============================================================
+#include "KVStore.h"
+#include "kvstore_global_api.h"
 
 
-
+const int EEPROM_START_ADDR = 0;
+const uint16_t EEPROM_MAGIC_VALIDATION = 0xABCD;
 
 volatile long leftEncoderPos = 0;
 volatile long rightEncoderPos = 0;
+
+
 
 void readLeftEncoder() {
   if (digitalRead(LEFT_ENCODER_PIN_A) == digitalRead(LEFT_ENCODER_PIN_B)) leftEncoderPos--;
@@ -158,7 +160,7 @@ void updateTask3LineNavigation() {
     stopMotors();
     task3FailureReason = "line navigation timeout";
     task3LineState = T3_LINE_FAILSAFE;
-    Serial.println("Line navigation TIMEOUT");
+    // Serial.println("Line navigation TIMEOUT");
     return;
   }
 
@@ -262,7 +264,7 @@ void updateTask3LineNavigation() {
         task3LineState = T3_LINE_DONE;
       } else if (millis() - nodeAdvanceStartMs > TURN_CENTER_ADVANCE_TIMEOUT_MS) {
         stopMotors();
-        Serial.println("Turn-center advance timeout; continuing to plan.");
+        // Serial.println("Turn-center advance timeout; continuing to plan.");
         task3LineState = T3_LINE_DONE;
       }
       break;
@@ -370,8 +372,8 @@ void startTask4OpenNavigation() {
   resetSegmentEncoders();
   task4OpenState = T4_OPEN_DRIVE_EDGE;
 
-  Serial.print("Task 4 open edge start. targetHeading=");
-  Serial.println(openTargetHeadingDeg, 1);
+//   Serial.print("Task 4 open edge start. targetHeading=");
+  // Serial.println(openTargetHeadingDeg, 1);
 }
 
 void updateTask4OpenNavigation() {
@@ -384,7 +386,7 @@ void updateTask4OpenNavigation() {
       task4OpenState != T4_OPEN_FAILSAFE) {
     stopMotors();
     task4OpenState = T4_OPEN_FAILSAFE;
-    Serial.println("Open navigation TIMEOUT");
+    // Serial.println("Open navigation TIMEOUT");
     return;
   }
 
@@ -397,7 +399,7 @@ void updateTask4OpenNavigation() {
       if (nearExpectedOpenNode()) {
         openSearchStartMs = millis();
         task4OpenState = T4_OPEN_SEARCH_NODE;
-        Serial.println("Open edge near target. Searching for RFID node.");
+        // Serial.println("Open edge near target. Searching for RFID node.");
         break;
       }
 
@@ -410,8 +412,8 @@ void updateTask4OpenNavigation() {
         openNodePauseStartMs = millis();
         stopMotors();
 
-        Serial.print("Open node RFID confirmed: 0x");
-        Serial.println(openConfirmedTagId, HEX);
+//         Serial.print("Open node RFID confirmed: 0x");
+        // Serial.println(openConfirmedTagId, HEX);
 
         task4OpenState = T4_OPEN_NODE_PAUSE;
         break;
@@ -420,7 +422,7 @@ void updateTask4OpenNavigation() {
       if (millis() - openSearchStartMs > OPEN_NODE_SEARCH_TIMEOUT_MS) {
         stopMotors();
         task4OpenState = T4_OPEN_FAILSAFE;
-        Serial.println("Open navigation failed: RFID node not found near target");
+        // Serial.println("Open navigation failed: RFID node not found near target");
         break;
       }
 
@@ -486,7 +488,7 @@ bool updatePostPlantAdvance() {
   if (millis() - postPlantAdvanceStartMs > POST_PLANT_ADVANCE_TIMEOUT_MS) {
     stopMotors();
     postPlantAdvanceActive = false;
-    Serial.println("Post-plant advance timeout; continuing to plan.");
+    // Serial.println("Post-plant advance timeout; continuing to plan.");
     return true;
   }
 
@@ -497,15 +499,21 @@ bool updatePostPlantAdvance() {
 // Ramp Wall Following with distance sensors + front distance sensors for stopping
 
 static bool rampInitialised = false;
+static bool rampDoorWaiting = false;
+static bool rampDoorCleared = false;
 static float wallLastError = 0;
 static float speedIntegral = 0;
 static unsigned long lastWallMicros = 0;
+static unsigned long rampDoorClearStartMs = 0;
 static long lastAvgEncoderCount = 0;
 
 void startRampWallFollowing() {
-  Serial.println("[RAMP] Initialising Wall Follower & Clearing Memory...");
+  // Serial.println("[RAMP] Initialising Wall Follower & Clearing Memory...");
   wallLastError = 0;
   speedIntegral = 0;
+  rampDoorWaiting = false;
+  rampDoorCleared = false;
+  rampDoorClearStartMs = 0;
   resetSegmentEncoders();
   lastAvgEncoderCount = 0;
   lastWallMicros = micros();
@@ -520,8 +528,8 @@ int updateRampWallFollowing(bool trackLeftWall) {
     startRampWallFollowing();
   }
 
-  // check for rfid to finish
-  if (sensors.rfidInfo != 0) {
+  // Only stop for RFID tags if we are entering the arena, NOT when we are exiting
+  if (sensors.rfidInfo != 0 && !headingToExit) {
     stopMotors();
     rampInitialised = false; // Reset for next time
     return 1; // Signal completion to Main loop
@@ -536,15 +544,62 @@ int updateRampWallFollowing(bool trackLeftWall) {
   // TAILGATING / stopping
   float dynamicTargetSpeed = TARGET_ENCODER_SPEED; 
 
+  if (rampDoorWaiting && sensors.tof_front == 0) {
+    stopMotors();
+    rampDoorClearStartMs = 0;
+    return 0;
+  }
+
   if (sensors.tof_front > 0) {
-    if (sensors.tof_front < FRONT_COLLISION_DIST_MM) {
+    if (!rampDoorCleared && sensors.tof_front < RAMP_DOOR_DETECT_DIST_MM) {
+      rampDoorWaiting = true;
+      rampDoorClearStartMs = 0;
+      stopMotors();
+      speedIntegral = 0;
+      lastAvgEncoderCount = getAverageEncoderCounts();
+
+      static unsigned long lastDoorWaitPrintMs = 0;
+      if (millis() - lastDoorWaitPrintMs > 1000) {
+        // Serial.println("[RAMP] Door detected. Waiting for manual opening...");
+        lastDoorWaitPrintMs = millis();
+      }
+      return 0;
+    }
+
+    if (rampDoorWaiting) {
+      if (sensors.tof_front > RAMP_DOOR_CLEAR_DIST_MM) {
+        if (rampDoorClearStartMs == 0) {
+          rampDoorClearStartMs = millis();
+          return 0;
+        }
+
+        if (millis() - rampDoorClearStartMs >= RAMP_DOOR_CLEAR_STABLE_MS) {
+          rampDoorWaiting = false;
+          rampDoorCleared = true;
+          rampDoorClearStartMs = 0;
+          resetSegmentEncoders();
+          lastAvgEncoderCount = 0;
+          speedIntegral = 0;
+          // Serial.println("[RAMP] Door clear. Resuming ramp wall following.");
+        } else {
+          stopMotors();
+          return 0;
+        }
+      } else {
+        rampDoorClearStartMs = 0;
+        stopMotors();
+        return 0;
+      }
+    }
+
+    if (!rampDoorWaiting && sensors.tof_front < FRONT_COLLISION_DIST_MM) {
       stopMotors();
       speedIntegral = 0; 
       lastAvgEncoderCount = getAverageEncoderCounts(); 
       
       static unsigned long lastWaitPrint = 0;
       if (millis() - lastWaitPrint > 1000) {
-        Serial.println("[RAMP] Obstacle critically close. Holding position...");
+        // Serial.println("[RAMP] Obstacle critically close. Holding position...");
         lastWaitPrint = millis();
       }
       return 0; // Stay parked
@@ -612,7 +667,7 @@ static unsigned long rescueStartMs = 0;
 static float rescueTargetHeading = 0.0; // remember heading incase no lines
 
 void startRescueApproach() {
-  Serial.println("[RESCUE] Target locked. Initiating approach vector...");
+  // Serial.println("[RESCUE] Target locked. Initiating approach vector...");
   rescueInitialised = true;
   lastError = 0; 
   resetSegmentEncoders();
@@ -631,7 +686,7 @@ int updateRescueApproach() {
   if (millis() - rescueStartMs > RESCUE_TIMEOUT_MS) {
     stopMotors();
     rescueInitialised = false;
-    Serial.println("[RESCUE ERROR] Timeout! Target missed or switch failed.");
+    // Serial.println("[RESCUE ERROR] Timeout! Target missed or switch failed.");
     return -1; // Signal a failure to the main loop
   }
 
@@ -641,7 +696,7 @@ int updateRescueApproach() {
   if (digitalRead(BUMPER_PIN) == LOW) {
     stopMotors();
     rescueInitialised = false; 
-    Serial.println("[RESCUE] Mechanical Contact Confirmed!");
+    // Serial.println("[RESCUE] Mechanical Contact Confirmed!");
     return 1; 
   }
 
@@ -667,4 +722,36 @@ int updateRescueApproach() {
   }
 
   return 0; // Still approaching
+}
+
+void saveIRCalibrationToMemory() {
+  // Mbed KVStore keys must start with the "/kv/" prefix to target default storage
+  int resMin = kv_set("/kv/irMin", sensorMin, sizeof(sensorMin), 0);
+  int resMax = kv_set("/kv/irMax", sensorMax, sizeof(sensorMax), 0);
+
+  // A return value of 0 indicates complete success in Mbed OS
+  if (resMin == 0 && resMax == 0) {
+    // Serial.println("[NVM] Calibration written permanently to Flash Storage via KVStore!");
+  } else {
+    // Serial.println("[NVM] ⚠️ Error saving configuration parameters to Flash.");
+  }
+}
+
+
+bool loadIRCalibrationFromMemory() {
+  size_t actualSizeMin = 0;
+  size_t actualSizeMax = 0;
+
+  // Attempt to pull saved arrays out of flash memory strings
+  int resMin = kv_get("/kv/irMin", sensorMin, sizeof(sensorMin), &actualSizeMin);
+  int resMax = kv_get("/kv/irMax", sensorMax, sizeof(sensorMax), &actualSizeMax);
+
+  // If both keys are found cleanly, bypass manual calibration loops
+  if (resMin == 0 && resMax == 0) {
+    // Serial.println("[NVM] Valid calibration layout loaded successfully via KVStore!");
+    return true;
+  }
+
+  // Serial.println("[NVM] No saved configuration found. Manual sweep required.");
+  return false;
 }

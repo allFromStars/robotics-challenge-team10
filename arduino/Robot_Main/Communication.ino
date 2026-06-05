@@ -12,6 +12,7 @@ static bool wifiEnabled = false;
 static bool emergencyActive = false;
 static bool heartbeatTimeout = false;
 static bool localSwitchEnabled = false;
+static bool mechanicalStartRequested = false;
 static bool wasConnected = false;
 static bool warnedLocalSafetyMode = false;
 static bool rescueLedOverride = false;
@@ -83,20 +84,20 @@ static int getIntForKey(const char *msg, const char *key, int defaultValue) {
 
 static bool sendServerMessage(const char *msg) {
   if (!ENABLE_NETWORK || !REQUIRE_SERVER_API) {
-    Serial.print("LOCAL API MODE: would send ");
-    Serial.println(msg);
+//     Serial.print("LOCAL API MODE: would send ");
+    // Serial.println(msg);
     return true;
   }
 
   if (!messenger.isConnected()) {
-    Serial.print("API send blocked, MQTT not connected: ");
-    Serial.println(msg);
+//     Serial.print("API send blocked, MQTT not connected: ");
+    // Serial.println(msg);
     return false;
   }
 
   bool sent = messenger.sendToBoard("server", msg);
-  Serial.print(sent ? "API sent: " : "API send failed: ");
-  Serial.println(msg);
+//   Serial.print(sent ? "API sent: " : "API send failed: ");
+  // Serial.println(msg);
   return sent;
 }
 
@@ -131,8 +132,9 @@ static void updateSafetySwitch() {
 
     if (stableSwitchState == SWITCH_ENABLED_STATE) {
       localSwitchEnabled = !localSwitchEnabled;
-      Serial.print("Mechanical kill switch: ");
-      Serial.println(localSwitchEnabled ? "RUNNING" : "STOPPED");
+      mechanicalStartRequested = localSwitchEnabled;
+//       Serial.print("Mechanical kill switch: ");
+      // Serial.println(localSwitchEnabled ? "RUNNING" : "STOPPED");
     }
   }
 
@@ -170,7 +172,7 @@ static void registerWithServer() {
   );
 
   messenger.sendToBoard("server", reg);
-  Serial.println("Registered with server.");
+  // Serial.println("Registered with server.");
 }
 
 void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payload, size_t length) {
@@ -178,25 +180,25 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     memcpy(teamStatus, payload, sizeof(teamStatus));
     teamStatusReceived = true;
 
-    Serial.print("Team status: queueExit=");
-    Serial.print(teamStatus[0]);
-    Serial.print(" airlockBBusy=");
-    Serial.print(teamStatus[1]);
-    Serial.print(" queueEnter=");
-    Serial.print(teamStatus[2]);
-    Serial.print(" airlockABusy=");
-    Serial.print(teamStatus[3]);
-    Serial.print(" emergency=");
-    Serial.print(teamStatus[4]);
-    Serial.print(" reEntryRequested=");
-    Serial.println(teamStatus[5]);
+//     Serial.print("Team status: queueExit=");
+//     Serial.print(teamStatus[0]);
+//     Serial.print(" airlockBBusy=");
+//     Serial.print(teamStatus[1]);
+//     Serial.print(" queueEnter=");
+//     Serial.print(teamStatus[2]);
+//     Serial.print(" airlockABusy=");
+//     Serial.print(teamStatus[3]);
+//     Serial.print(" emergency=");
+//     Serial.print(teamStatus[4]);
+//     Serial.print(" reEntryRequested=");
+    // Serial.println(teamStatus[5]);
     return;
   }
 
   if (length == 21) {
     memcpy(occupancyMapBytes, payload, sizeof(occupancyMapBytes));
     occupancyMapReceived = true;
-    Serial.println("Occupancy map update received.");
+    // Serial.println("Occupancy map update received.");
     return;
   }
 
@@ -206,12 +208,12 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
   memcpy(msg, payload, copyLen);
   msg[copyLen] = '\0';
 
-  Serial.print("Message from ");
-  Serial.print(metadata.fromBoardId);
-  Serial.print(" to ");
-  Serial.print(metadata.target);
-  Serial.print(": ");
-  Serial.println(msg);
+//   Serial.print("Message from ");
+//   Serial.print(metadata.fromBoardId);
+//   Serial.print(" to ");
+//   Serial.print(metadata.target);
+//   Serial.print(": ");
+  // Serial.println(msg);
 
   if (strstr(msg, "type=heartbeat")) {
     lastHeartbeatMs = millis();
@@ -220,13 +222,13 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     if (strstr(msg, "enable=1")) {
       wifiEnabled = true;
       emergencyActive = false;
-      Serial.println("SAFETY: WiFi enabled by heartbeat");
+      // Serial.println("SAFETY: WiFi enabled by heartbeat");
     } else if (strstr(msg, "enable=0")) {
       wifiEnabled = false;
       emergencyActive = false;
       stopMotors();
       abortPlanting();
-      Serial.println("SAFETY: WiFi disabled by heartbeat");
+      // Serial.println("SAFETY: WiFi disabled by heartbeat");
     }
   }
 
@@ -235,7 +237,7 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     emergencyActive = true;
     stopMotors();
     abortPlanting();
-    Serial.println("SAFETY: Emergency active");
+    // Serial.println("SAFETY: Emergency active");
   }
 
   if (strstr(msg, "type=disable") && strstr(msg, "enabled=false")) {
@@ -243,7 +245,7 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     emergencyActive = false;
     stopMotors();
     abortPlanting();
-    Serial.println("SAFETY: Individual disable active");
+    // Serial.println("SAFETY: Individual disable active");
   }
 
   if (strstr(msg, "type=openAirlockReply")) {
@@ -255,10 +257,10 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
       airlockReplyAirlock = airlockValue[0];
     }
 
-    Serial.print("AIRLOCK reply: airlock=");
-    Serial.print(airlockReplyAirlock);
-    Serial.print(" accepted=");
-    Serial.println(airlockAccepted ? "true" : "false");
+//     Serial.print("AIRLOCK reply: airlock=");
+//     Serial.print(airlockReplyAirlock);
+//     Serial.print(" accepted=");
+    // Serial.println(airlockAccepted ? "true" : "false");
   }
 
   if (strstr(msg, "type=isFertileReply")) {
@@ -268,14 +270,14 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     fertilityReplyX = getIntForKey(msg, "x=", -1);
     fertilityReplyY = getIntForKey(msg, "y=", -1);
 
-    Serial.print("FERTILITY reply: fertile=");
-    Serial.print(fertilityReplyFertile ? "true" : "false");
-    Serial.print(" planted=");
-    Serial.print(fertilityReplyPlanted ? "true" : "false");
-    Serial.print(" x=");
-    Serial.print(fertilityReplyX);
-    Serial.print(" y=");
-    Serial.println(fertilityReplyY);
+//     Serial.print("FERTILITY reply: fertile=");
+//     Serial.print(fertilityReplyFertile ? "true" : "false");
+//     Serial.print(" planted=");
+//     Serial.print(fertilityReplyPlanted ? "true" : "false");
+//     Serial.print(" x=");
+//     Serial.print(fertilityReplyX);
+//     Serial.print(" y=");
+    // Serial.println(fertilityReplyY);
   }
 
   if (strstr(msg, "type=reviveReply")) {
@@ -284,8 +286,8 @@ void onCommunicationMessage(const MessageMetadata& metadata, const uint8_t* payl
     reviveReplySuccess = getValueForKey(msg, "status=", status, sizeof(status)) &&
                          strcmp(status, "success") == 0;
 
-    Serial.print("REVIVE reply: success=");
-    Serial.println(reviveReplySuccess ? "true" : "false");
+//     Serial.print("REVIVE reply: success=");
+    // Serial.println(reviveReplySuccess ? "true" : "false");
   }
 }
 
@@ -294,10 +296,10 @@ void initRobotCommunication() {
   stableSwitchState = lastSwitchReading;
   localSwitchEnabled = false;
 
-  Serial.println("Mechanical kill switch: STOPPED. Press button once to run.");
+  // Serial.println("Mechanical kill switch: STOPPED. Press button once to run.");
 
   if (!ENABLE_NETWORK) {
-    Serial.println("NETWORK DISABLED: MiniMessenger not started.");
+    // Serial.println("NETWORK DISABLED: MiniMessenger not started.");
     return;
   }
 
@@ -311,7 +313,7 @@ void initRobotCommunication() {
     BOARD_ID
   );
 
-  Serial.println("Network connecting...");
+  // Serial.println("Network connecting...");
 }
 
 void updateRobotCommunication() {
@@ -328,13 +330,13 @@ void updateRobotCommunication() {
 
   if (connected != wasConnected) {
     wasConnected = connected;
-    Serial.print("Network/MQTT: ");
-    Serial.println(connected ? "connected" : "disconnected");
+//     Serial.print("Network/MQTT: ");
+    // Serial.println(connected ? "connected" : "disconnected");
   }
 
   if (!connected && millis() - lastStatusPrintMs >= 2000) {
     lastStatusPrintMs = millis();
-    Serial.println("Waiting for WiFi/MQTT connection...");
+    // Serial.println("Waiting for WiFi/MQTT connection...");
   }
 
   if (connected && (lastRegisterMs == 0 || millis() - lastRegisterMs >= WIFI_REGISTER_INTERVAL_MS)) {
@@ -342,12 +344,12 @@ void updateRobotCommunication() {
     registerWithServer();
   }
 
-  if (wifiEnabled && millis() - lastHeartbeatMs > WIFI_HEARTBEAT_TIMEOUT_MS) {
+  if (REQUIRE_WIFI_SAFETY && wifiEnabled && millis() - lastHeartbeatMs > WIFI_HEARTBEAT_TIMEOUT_MS) {
     wifiEnabled = false;
     heartbeatTimeout = true;
     stopMotors();
     abortPlanting();
-    Serial.println("SAFETY: Heartbeat timeout");
+    // Serial.println("SAFETY: Heartbeat timeout");
   }
 
   updateSafetyLed();
@@ -356,7 +358,7 @@ void updateRobotCommunication() {
 bool robotAllowedToMove() {
   if (!ENABLE_NETWORK || !REQUIRE_WIFI_SAFETY) {
     if (!warnedLocalSafetyMode) {
-      Serial.println("LOCAL TEST MODE: WiFi heartbeat is not required for movement.");
+      // Serial.println("LOCAL TEST MODE: WiFi heartbeat is not required for movement.");
       warnedLocalSafetyMode = true;
     }
 
@@ -364,6 +366,15 @@ bool robotAllowedToMove() {
   }
 
   return wifiEnabled && localSwitchEnabled && !emergencyActive && !heartbeatTimeout;
+}
+
+bool consumeMechanicalStartRequest() {
+  if (!localSwitchEnabled || !mechanicalStartRequested) {
+    return false;
+  }
+
+  mechanicalStartRequested = false;
+  return true;
 }
 
 bool robotSafetyEmergencyActive() {
@@ -505,10 +516,18 @@ bool requestOccupancyMap() {
 }
 
 bool occupancyMapIsReady() {
+  if (!serverApiRequired()) {
+    return true;
+  }
+
   return occupancyMapReceived;
 }
 
 uint8_t getOccupancyMapCell(int x, int y) {
+  if (!serverApiRequired()) {
+    return 0;
+  }
+
   if (!occupancyMapReceived || x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
     return 3;
   }

@@ -7,6 +7,26 @@
 #include "pins.h"
 #include "robot_state.h"
 
+
+// true = Grid Area priority, false = Open Area priority
+const int TOTAL_STRATEGY_STEPS = 5;
+bool strategyPlaybook[TOTAL_STRATEGY_STEPS] = {true, true, false, true, false};
+int currentStrategyIdx = 0;
+
+
+
+// 9x9 => max = 8
+const int MAX_GRID_INDEX = 8; 
+
+// --- Internal Map Landmarks ---
+const int INTERNAL_AIRLOCK_A_X = 0;
+const int INTERNAL_AIRLOCK_A_Y = 2; // ENTRANCE (Calibrate here)
+
+const int INTERNAL_AIRLOCK_B_X = 0;
+const int INTERNAL_AIRLOCK_B_Y = 6; // EXIT (Drive here to finish)
+
+
+
 bool debugIRMode = false;
 bool startPlanWhenAllowed = false;
 
@@ -22,6 +42,8 @@ bool tofLeftOnline   = false;
 bool tofRight1Online = false;
 bool tofRight2Online = false;
 
+extern volatile long leftEncoderPos;
+extern volatile long rightEncoderPos;
 
 
 MotoronI2C mc(16);
@@ -73,6 +95,7 @@ struct INFO {
 };
 INFO robotInfo;
 
+/*
 const int TOTAL_SEED_TARGETS = 5; 
 Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
   {1, 4}, // Target 1
@@ -81,10 +104,14 @@ Coordinate seedTargets[TOTAL_SEED_TARGETS] = {
   {4, 6}, // Target 4
   {6, 6}  // Target 5
 };
+robotInfo.finalDestination = seedTargets[0]; // Load the first target from the list!
 
 int currentTargetIndex = 0; 
+*/
+
 bool headingToExit = false; 
-const float AIRLOCK_HEADING = -90;
+const float AIRLOCK_HEADING = 180;
+const bool ENABLE_SERIAL_COMMANDS = false;
 
 
 bool initSensors();
@@ -100,6 +127,7 @@ int updateRampWallFollowing(bool trackLeftWall);
 void initRobotCommunication();
 void updateRobotCommunication();
 bool robotAllowedToMove();
+bool consumeMechanicalStartRequest();
 bool robotSafetyEmergencyActive();
 bool serverApiRequired();
 bool requestOpenAirlock(char airlock, uint32_t tagId);
@@ -119,6 +147,54 @@ bool occupancyMapIsReady();
 uint8_t getOccupancyMapCell(int x, int y);
 void setRescueLedOverride(bool enabled);
 float normaliseAngleDeg(float angle);
+void readLeftEncoder();
+void readRightEncoder();
+bool initIMU();
+void driveMotors(int leftLogicalSpeed, int rightLogicalSpeed);
+void startTurnAngle(float targetAngle);
+bool updateTurnAngle();
+void processLinePosition();
+void followGridLinePD(int baseSpeed);
+void driveForwardMagnitudes(int leftMagnitude, int rightMagnitude);
+void startIRCalibration();
+void updateIRCalibration();
+bool isCalibrationComplete();
+void saveIRCalibrationToMemory();
+void cancelTurnAngle();
+void startTask2BaseExit();
+int updateTask2BaseExit();
+
+void resetMissionProgress() {
+  stopMotors();
+  abortPlanting();
+
+  robotInfo.seedsLeft = STARTING_SEED_COUNT;
+  robotInfo.currentPos.x = START_X;
+  robotInfo.currentPos.y = START_Y;
+  robotInfo.finalDestination.x = DEFAULT_DESTINATION_X;
+  robotInfo.finalDestination.y = DEFAULT_DESTINATION_Y;
+  robotInfo.totalWaypoints = 0;
+  robotInfo.currentWaypointIdx = 0;
+
+  currentStrategyIdx = 0;
+  headingToExit = false;
+  newPathNeeded = true;
+  startPlanWhenAllowed = false;
+
+  sensors.yaw = 0.0;
+  lastTimeMicros = micros();
+}
+
+void startFullMissionFromBase() {
+  resetMissionProgress();
+  if (SKIP_TASK2_BASE_TO_RAMP) {
+    startRampWallFollowing();
+    currentState = STATE_RAMP;
+  } else {
+    startTask2BaseExit();
+    currentState = STATE_TASK2_BASE_EXIT;
+  }
+}
 
 bool robotStateRequiresSafety(RobotState state) {
   switch (state) {
@@ -135,15 +211,11 @@ bool robotStateRequiresSafety(RobotState state) {
 
 void setup() {
   Serial.begin(115200);
-  unsigned long serialWaitStartMs = millis();
-  while (!Serial && millis() - serialWaitStartMs < 1500) {
-    delay(10);
-  }
-  delay(500);
+  delay(200);
   
-  Serial.println("\n=========================================");
-  Serial.println("       Components test   ");
-  Serial.println("=========================================");
+  //serial.println("\n=========================================");
+  //serial.println("       Components test   ");
+  //serial.println("=========================================");
 
 
   Wire.begin();
@@ -180,11 +252,25 @@ void setup() {
   digitalWrite(RGB_RED_PIN, HIGH); 
   digitalWrite(RGB_GREEN_PIN, HIGH);
 
-  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN_A), readLeftEncoder, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN_A), readRightEncoder, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN_A), readLeftEncoder, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN_A), readRightEncoder, CHANGE);
+
+  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN_A), readLeftEncoder, RISING);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN_A), readRightEncoder, RISING);
+
+  motorOnline = initMotors();
+  stopMotors();
+
+  //serial.println("[SYSTEM] Waiting 5 seconds before automatic calibration.");
+  unsigned long calibrationDelayStartMs = millis();
+  while (millis() - calibrationDelayStartMs < STARTUP_CALIBRATION_DELAY_MS) {
+    if (motorOnline) {
+      mc.resetCommandTimeout();
+    }
+    delay(10);
+  }
 
   imuOnline   = initIMU();
-  motorOnline = initMotors();
   rfidOnline  = checkI2CDevice(Wire1, RFID_ADDR);
   
   if (rfidOnline) {
@@ -194,12 +280,12 @@ void setup() {
   // =============================================================================
   // Components check
   // =============================================================================
-  Serial.println(imuOnline   ? "[OK] IMU Sensor"  : "[FAILED] IMU Sensor");
-  Serial.println(motorOnline ? "[OK] Motoron MCU" : "[FAILED] Motoron MCU");
-  Serial.println(rfidOnline  ? "[OK] RFID Reader" : "[FAILED] RFID Reader");
+  //serial.println(imuOnline   ? "[OK] IMU Sensor"  : "[FAILED] IMU Sensor");
+  //serial.println(motorOnline ? "[OK] Motoron MCU" : "[FAILED] Motoron MCU");
+  //serial.println(rfidOnline  ? "[OK] RFID Reader" : "[FAILED] RFID Reader");
   
-  Serial.println("[INFO] TOF sensors: runtime UART frame detection enabled");
-  Serial.println("=========================================\n");
+  //serial.println("[INFO] TOF sensors: runtime UART frame detection enabled");
+  //serial.println("=========================================\n");
 
   //robot info setup
   robotInfo.seedsLeft = STARTING_SEED_COUNT;      // Start with a full hopper
@@ -212,70 +298,122 @@ void setup() {
   robotInfo.finalDestination.x = DEFAULT_DESTINATION_X;
   robotInfo.finalDestination.y = DEFAULT_DESTINATION_Y;
   
-  robotInfo.finalDestination = seedTargets[0]; // Load the first target from the list!
+
 
   initRobotCommunication();
+  //serial.println("[SYSTEM] Starting automatic IR calibration.");
+  startIRCalibration();
   currentState = STATE_CALIBRATING_IR;
 }
+  
+
 
 void loop() {
+
   yield();
   refreshAllSensors();
   updateRobotCommunication();
-  mc.resetCommandTimeout();
+  if (motorOnline) {
+      mc.resetCommandTimeout();
+  }
 
   if (robotSafetyEmergencyActive()) {
     currentState = STATE_EMERGENCY_STOP;
   }
 
-  if (Serial.available() > 0) {
-      char cmd = Serial.read();
-      
-      if (cmd == 'g' || cmd == 'G') {
-        stopMotors();
-        calibrateGyroBiasZ(1000);
-        sensors.yaw = 0.0;
-        lastTimeMicros = micros();
-        newPathNeeded = true;
-        currentState = STATE_PLAN;
-        Serial.println("--- Starting Mission Plan ---");
-      }
-      else if (cmd == 'd' || cmd == 'D') {
-        debugIRMode = false; // Ensure it enters standard debug
-        currentState = STATE_DEBUG;
-        Serial.println("--- Entering Standard Debug Mode ---");
-      }
-      else if (cmd == 'i' || cmd == 'I') {
-        debugIRMode = true; // Swap to IR debug
-        currentState = STATE_DEBUG;
-        Serial.println("--- Entering Full IR Debug Mode ---");
-      }
-      else if (cmd == 'c' || cmd == 'C') {
-        Serial.println("--- Manual Calibration Triggered ---");
-        stopMotors(); 
-        startIRCalibration(); 
-        currentState = STATE_CALIBRATING_IR; 
-      }
-      else if (cmd == 'p' || cmd == 'P') {
-        if (!robotAllowedToMove()) {
-          Serial.println("PLANTING BLOCKED: enable WiFi and mechanical switch first.");
-          return;
-        }
+  if (currentState != STATE_CALIBRATING_IR && consumeMechanicalStartRequest()) {
+    startFullMissionFromBase();
+  }
 
-        Serial.println("PLANTING SEQUENCE");
-        startPlanting(); 
-        currentState = STATE_PLANTING; 
+  if (ENABLE_SERIAL_COMMANDS && Serial.available() > 0) {
+    char cmd = Serial.read();
+    
+    if (cmd == 'g' || cmd == 'G') {
+      // Guard check for missing hardware
+      if (!imuOnline) {
+        //serial.println("[ERROR] Cannot calibrate gyro: IMU is OFFLINE!");
+        return; // Erits loop() safely if the sensor is missing
       }
-      else if (cmd == 'r' || cmd == 'R') {
-        Serial.println("RAMP");
-        startRampWallFollowing(); 
-        currentState = STATE_RAMP; 
+
+      // This mission start logic now sits properly inside the 'g' command block
+      stopMotors();
+      calibrateGyroBiasZ(1000);
+      sensors.yaw = 0.0;
+      lastTimeMicros = micros();
+      startTask2BaseExit();
+      currentState = STATE_TASK2_BASE_EXIT;
+      //serial.println("--- Starting Task 2 Base Exit ---");
+    }
+    else if (cmd == 'd' || cmd == 'D') {
+      debugIRMode = false; // Ensure it enters standard debug
+      currentState = STATE_DEBUG;
+      //serial.println("--- Entering Standard Debug Mode ---");
+    }
+    else if (cmd == 'i' || cmd == 'I') {
+      debugIRMode = true; // Swap to IR debug
+      currentState = STATE_DEBUG;
+      //serial.println("--- Entering Full IR Debug Mode ---");
+    }
+    else if (cmd == 'c' || cmd == 'C') {
+      //serial.println("--- Manual Calibration Triggered ---");
+      stopMotors(); 
+      startIRCalibration(); 
+      currentState = STATE_CALIBRATING_IR; 
+    }
+    else if (cmd == 'p' || cmd == 'P') {
+      if (!robotAllowedToMove()) {
+        //serial.println("PLANTING BLOCKED: enable WiFi and mechanical switch first.");
+        return;
       }
-      else if (cmd == 's' || cmd == 'S') {
-        Serial.println("SAVING RESCUE MODE");
-        startRampWallFollowing(); 
-        currentState = STATE_RESCUE_MODE; 
-      }
+
+      //serial.println("PLANTING SEQUENCE");
+      startPlanting(); 
+      currentState = STATE_PLANTING; 
+    }
+    else if (cmd == 'r' || cmd == 'R') {
+      //serial.println("RAMP");
+      startRampWallFollowing(); 
+      currentState = STATE_RAMP; 
+    }
+    else if (cmd == 's' || cmd == 'S') {
+      //serial.println("SAVING RESCUE MODE");
+      startRampWallFollowing(); 
+      currentState = STATE_RESCUE_MODE; 
+    }
+    else if (cmd == 't' || cmd == 'T') {  
+      //serial.println("\n--- [TEST] MOCK SERVER COORDINATE TEST ---");
+
+      // 1. Pretend the server just told us a tag is at X: 2, Y: 8
+      int mockServerX = 9;
+      int mockServerY = 3;
+
+//       Serial.print("Server Raw Input: (X: ");
+//       Serial.print(mockServerX); Serial.print(", Y: "); Serial.print(mockServerY); //serial.println(")");
+
+      // 2. Run it through your conversion function
+      Coordinate translated = convertServerToInternal(mockServerX, mockServerY);
+
+      // 3. Print the result that the pathfinder will actually use
+//       Serial.print("Robot Translated: (X: ");
+//       Serial.print(translated.x); Serial.print(", Y: "); Serial.print(translated.y); //serial.println(")");
+      
+      //serial.println("------------------------------------------");
+
+      // 1. Pretend the server just told us a tag is at X: 2, Y: 8
+      mockServerX = 8;
+      mockServerY = 7;
+
+//       Serial.print("Server Raw Input: (X: ");
+//       Serial.print(mockServerX); Serial.print(", Y: "); Serial.print(mockServerY); //serial.println(")");
+
+      // 2. Run it through your conversion function
+      translated = convertServerToInternal(mockServerX, mockServerY);
+
+      // 3. Print the result that the pathfinder will actually use
+//       Serial.print("Robot Translated: (X: ");
+//       Serial.print(translated.x); Serial.print(", Y: "); Serial.print(translated.y); //serial.println(")");
+    }
+
   }
 
   if (!robotAllowedToMove() && robotStateRequiresSafety(currentState)) {
@@ -293,44 +431,67 @@ void loop() {
     case STATE_PLAN: {
       printVisualMap();
 
-      // check if we have finished
-      if (currentTargetIndex >= TOTAL_SEED_TARGETS || robotInfo.seedsLeft <= 0) {
+      // Check if the mission is globally complete (No seeds left or playbook finished)
+      if (currentStrategyIdx >= TOTAL_STRATEGY_STEPS || robotInfo.seedsLeft <= 0) {
         if (!headingToExit) {
-          Serial.println("Mission Complete or Out of Seeds! Locking Exit Coordinate.");
-          headingToExit = true;                // finished
-          robotInfo.finalDestination = {0, 7}; // airlock exit coords
+          //serial.println("Mission Complete or Out of Seeds! Locking Exit Coordinate.");
+          headingToExit = true;
+          robotInfo.finalDestination = {0, 7}; // Airlock exit coords
           newPathNeeded = true;
         }
-      } else {
-        // Load the next target from the list
-        robotInfo.finalDestination = seedTargets[currentTargetIndex]; 
+      } 
+      else if (newPathNeeded) {
+        // Request a fresh occupancy map from the server before calculating a new path
+        requestOccupancyMap(); 
+        
+        // Wait a brief moment for the MQTT callback to populate the map bytes
+        unsigned long mapWait = millis();
+        while (!occupancyMapIsReady() && millis() - mapWait < 300) {
+          updateRobotCommunication();
+          yield();
+        }
+
+        // Find the closest target matching our current playbook strategy rule
+        while (currentStrategyIdx < TOTAL_STRATEGY_STEPS) {
+          if (findNearestStrategicTarget()) {
+            break; // Valid target found and loaded into robotInfo.finalDestination!
+          }
+          
+          // If this playbook play yields absolutely no options left in the arena,
+          // automatically skip to the next strategy rule!
+//           Serial.print("[PLAN] Strategy step ");
+//           Serial.print(currentStrategyIdx);
+          //serial.println(" completely exhausted. Moving to next play...");
+          currentStrategyIdx++;
+        }
+
+        // Double check if we fell off the end of the playbook while skipping empty strategies
+        if (currentStrategyIdx >= TOTAL_STRATEGY_STEPS) {
+          //serial.println("All strategy rules exhausted! Heading to exit.");
+          headingToExit = true;
+          robotInfo.finalDestination = {INTERNAL_AIRLOCK_B_X, INTERNAL_AIRLOCK_B_Y};
+        }
       }
 
-      // check if current position is destination
+      // Check if current position is the destination
       if (robotInfo.currentPos.x == robotInfo.finalDestination.x && robotInfo.currentPos.y == robotInfo.finalDestination.y) {
-        
-        // check if we are heading for exit or planting
         if (headingToExit) {
-          Serial.println("Arrived at the Exit Airlock. Initiating exit Sequence...");
-          
-          // Calculate the turn to face the correct way for the airlock
+          //serial.println("Arrived at the Exit Airlock. Initiating exit Sequence...");
           float turnAngle = normaliseAngleDeg(AIRLOCK_HEADING - sensors.yaw);
           startTurnAngle(turnAngle);
-          
           currentState = STATE_ALIGN_AIRLOCK_B;
-          
         } else {
-          Serial.println("Target reached! Deploying Planter...");
+          //serial.println("Target reached! Deploying Planter...");
           startPlanting();
           currentState = STATE_PLANTING; 
         }
         break; 
       }
 
-      // if new path is required, calculate, if not increment waypoint
+      // Path generation and execution pass-off
       if (newPathNeeded) {
         if (!calculateWeightedPath()) {
-          Serial.println("ERROR: No valid path to target.");
+          //serial.println("ERROR: No valid path to target.");
           currentState = STATE_EMERGENCY_STOP;
           break;
         }
@@ -340,16 +501,9 @@ void loop() {
         robotInfo.currentWaypointIdx += 1;
       }
 
-      // pass over to turn
       Coordinate nextNode = robotInfo.getNextNode(); 
       float targetHeading = getTargetHeading(robotInfo.currentPos, nextNode);
       float turnAngle = normaliseAngleDeg(targetHeading - sensors.yaw);
-      Serial.print("[PLAN] Next node target heading: ");
-      Serial.print(targetHeading, 1);
-      Serial.print(" current yaw: ");
-      Serial.print(sensors.yaw, 1);
-      Serial.print(" turn angle: ");
-      Serial.println(turnAngle, 1);
       
       startTurnAngle(turnAngle); 
       currentState = STATE_TURN;
@@ -358,31 +512,44 @@ void loop() {
 
 
     case STATE_STANDBY_BASE:
-      if (startPlanWhenAllowed && robotAllowedToMove()) {
-        startPlanWhenAllowed = false;
-        stopMotors();
-        calibrateGyroBiasZ(1000);
-        sensors.yaw = 0.0;
-        lastTimeMicros = micros();
-        newPathNeeded = true;
-        currentState = STATE_PLAN;
-        Serial.println("Start switch enabled. Starting mission plan.");
-        break;
-      }
-
       stopMotors();
       break;
 
-    case STATE_CALIBRATING_IR:
-      // Run the non-blocking math
-      updateIRCalibration();
+    case STATE_TASK2_BASE_EXIT: {
+      int task2Result = updateTask2BaseExit();
+
+      if (task2Result == 1) {
+        //serial.println("SUCCESS: Task 2 complete. Cleared ramp and entered the arena!");
+
+        requestFertilityCheck(sensors.rfidInfo);
+
+        unsigned long apiWait = millis();
+        while (!fertilityReplyReady() && millis() - apiWait < 500) {
+          updateRobotCommunication();
+          yield();
+        }
+
+        robotInfo.currentPos.x = INTERNAL_AIRLOCK_A_X;
+        robotInfo.currentPos.y = INTERNAL_AIRLOCK_A_Y;
+
+        snapYawToGrid();
+        newPathNeeded = true;
+        currentState = STATE_PLAN;
+      } else if (task2Result < 0) {
+        currentState = STATE_EMERGENCY_STOP;
+      }
+      break;
+    }
+
+      case STATE_CALIBRATING_IR:
+      updateIRCalibration(); 
       
-      // When 12 seconds are up, transition to standby!
-      if (isCalibrationComplete()) {
-        Serial.println("Robot Ready. Press the start switch to begin mission plan.");
-        stopMotors();
-        startPlanWhenAllowed = true;
-        currentState = STATE_STANDBY_BASE;
+      if (isCalibrationComplete()) { 
+        //serial.println("Robot Ready. Press the start switch to begin mission plan."); 
+        stopMotors(); 
+
+        startPlanWhenAllowed = true; 
+        currentState = STATE_STANDBY_BASE; 
       }
       break;
 
@@ -391,7 +558,7 @@ void loop() {
       updateTask3LineNavigation(); 
 
       if (task3LineNavigationComplete()) {
-        Serial.println("SUCCESS: Reached next node!");
+        //serial.println("SUCCESS: Reached next node!");
         robotInfo.currentPos = robotInfo.getNextNode(); // Update Map Memory
         //YawToGrid();                                // EXPERIMENTAL round the gyro reading to snap to nearest 90 degrees while we are navigating grid lines
          
@@ -399,9 +566,9 @@ void loop() {
 
       } 
       else if (task3LineNavigationFailed()) {
-         Serial.println("ERROR: Failsafe triggered (Lost line or timeout).");
-         Serial.print("Task 3 failure reason: ");
-         Serial.println(getTask3LineNavigationFailureReason());
+         //serial.println("ERROR: Failsafe triggered (Lost line or timeout).");
+//          Serial.print("Task 3 failure reason: ");
+         //serial.println(getTask3LineNavigationFailureReason());
          currentState = STATE_EMERGENCY_STOP; 
          // currentState = STATE_PLAN;
       }
@@ -411,13 +578,13 @@ void loop() {
       updateTask4OpenNavigation();
 
       if (task4OpenNavigationComplete()) {
-        Serial.println("SUCCESS: Reached next open-field node!");
+        //serial.println("SUCCESS: Reached next open-field node!");
         robotInfo.currentPos = robotInfo.getNextNode();
         snapYawToGrid();
         currentState = STATE_PLAN;
       }
       else if (task4OpenNavigationFailed()) {
-        Serial.println("ERROR: Open-field navigation failed.");
+        //serial.println("ERROR: Open-field navigation failed.");
         currentState = STATE_EMERGENCY_STOP;
       }
       
@@ -433,8 +600,8 @@ void loop() {
         refreshAllSensors();
 
         if (sensors.tof_front < OBSTACLE_THRESHOLD_MM && sensors.tof_front > 0) {
-            Serial.print("OBSTACLE DETECTED at distance: ");
-            Serial.println(sensors.tof_front);
+//             Serial.print("OBSTACLE DETECTED at distance: ");
+            //serial.println(sensors.tof_front);
             
             // Mark the target node as an impassable wall (3) in the digital map
             arenaMap[8 - nextNode.y][nextNode.x] = 3; 
@@ -462,24 +629,102 @@ void loop() {
       }
       break;
     }
-    case STATE_PLANTING:
-      // call update planting after initial call
-      if (updatePlanting()) {
-        // The planter returned TRUE - has finished
-        // Seed count is decreased inside of seed function in Hardware.ino
-        Serial.print("Seeds remaining: ");
-        Serial.println(robotInfo.seedsLeft);
-        currentTargetIndex++; //move to next target in the list
-        startPostPlantAdvance();
-        currentState = STATE_ADVANCE_AFTER_PLANTING;
+    case STATE_PLANTING: {
+      // Create a static step tracker to handle the multi-step network handshake
+      static int plantingStep = 0; 
+      static unsigned long apiTimeoutMs = 0;
+
+      switch (plantingStep) {
+        
+        // 0: Scan RFID & Request Fertility Check ---
+        case 0: {
+          //serial.println("[PLANTER] Arrived at target node. Scanning RFID tag...");
+          
+          if (!rfidOnline) {
+            //serial.println("[PLANTER] Warning: RFID reader offline! Forced to skip verification.");
+            startPlanting(); // Fallback: just start planting blind
+            plantingStep = 2; 
+            break;
+          }
+
+          // Read the current RFID tag data
+          refreshAllSensors(); 
+          uint32_t currentTag = sensors.rfidInfo;
+
+          if (currentTag == 0) {
+            //serial.println("[PLANTER] Error: No RFID tag detected under the robot! Retrying scan...");
+            // Optionally add a tiny timeout or just let it loop until a tag is found
+            break;
+          }
+
+//           Serial.print("[PLANTER] Tag detected: "); //serial.println(currentTag, HEX);
+          //serial.println("[PLANTER] Sending fertility check request to server...");
+          
+          requestFertilityCheck(currentTag);
+          apiTimeoutMs = millis();
+          plantingStep = 1; // Move to waiting for reply
+          break;
+        }
+
+        // 1: Wait for Server Fertility Confirmation ---
+        case 1: {
+          // Check if the MQTT callback has updated our fertility status
+          if (fertilityReplyReady()) {
+            if (currentTagIsPlantable()) {
+              //serial.println("[PLANTER] Server confirmed: TAG IS FERTILE. Deploying physical mechanism...");
+              startPlanting(); // Trigger your hardware planting routine
+              plantingStep = 2;
+            } else {
+              //serial.println("[PLANTER] Server rejected: Tag is already planted or infertile! Aborting.");
+              plantingStep = 0; // Reset step for next time
+              currentState = STATE_ADVANCE_AFTER_PLANTING; // Skip this spot safely
+            }
+          }
+          // Network failsafe: if server doesn't reply in 1.5 seconds, plant anyway
+          else if (millis() - apiTimeoutMs > 1500) {
+            //serial.println("[PLANTER] API Timeout! Server didn't reply. Deploying anyway as failsafe...");
+            startPlanting();
+            plantingStep = 2;
+          }
+          break;
+        }
+
+        // 2: Physical Deployment 
+        case 2: {
+          if (updatePlanting()) {
+            // Physical hardware actions completed successfully!
+//             Serial.print("[PLANTER] Seed dropped. Seeds remaining: ");
+            //serial.println(robotInfo.seedsLeft);
+
+            // Report the successful plant back to the server to secure your points
+            if (rfidOnline && sensors.rfidInfo != 0) {
+              //serial.println("[PLANTER] Reporting seed deployment to server API...");
+              reportSeedPlanted(sensors.rfidInfo);
+            }
+
+            // Move to the post-plant step and reset our step counter for the next run
+            startPostPlantAdvance();
+            plantingStep = 0; 
+            currentState = STATE_ADVANCE_AFTER_PLANTING;
+          }
+          break;
+        }
       }
       break;
+    }
+      
     case STATE_ADVANCE_AFTER_PLANTING:
       if (updatePostPlantAdvance()) {
-        newPathNeeded = true; //tell plan to calculate route
-        currentState = STATE_PLAN; // Go to next target
+        // Move to the next index in our playbook array {true, true, false, true, false}
+        currentStrategyIdx++; 
+//         Serial.print("[STRATEGY] Step complete. Advancing Playbook Index to: ");
+        //serial.println(currentStrategyIdx);
+
+        newPathNeeded = true;       // Force the planner to evaluate the new rule
+        currentState = STATE_PLAN;  // Recalculate route to the next strategic target
       }
       break;
+
     case STATE_EMERGENCY_STOP:
       stopMotors();
       abortPlanting();
@@ -487,19 +732,26 @@ void loop() {
     case STATE_BASE_NAVIGATION:
 
     case STATE_RAMP: {
-      // Returns 1 when it successfully crosses the RFID scanner
       if (updateRampWallFollowing(true) == 1) { 
-        Serial.println("SUCCESS: Cleared the ramp and entered the arena!");
+        //serial.println("SUCCESS: Cleared the ramp and entered the arena!");
         
-        Coordinate truePosition;// = getCoordinateFromRFID(sensors.rfidInfo);
-        truePosition.x = 0;
-        truePosition.y = 3; //hard coded airlock coordinates
-        if (truePosition.x != -1 && truePosition.y != -1) {
-          robotInfo.currentPos = truePosition;
-          Serial.print("[RAMP EXIT] Synced to: (X:");
-          Serial.print(robotInfo.currentPos.x); Serial.print(", Y:");
-          Serial.print(robotInfo.currentPos.y); Serial.println(")");
+        // 1. Force a server request to pull the exact API coordinates of this Airlock
+        requestFertilityCheck(sensors.rfidInfo);
+        
+        unsigned long apiWait = millis();
+        while (!fertilityReplyReady() && millis() - apiWait < 500) {
+          updateRobotCommunication();
+          yield();
         }
+
+
+        // Set our internal position safely
+        robotInfo.currentPos.x = INTERNAL_AIRLOCK_A_X;
+        robotInfo.currentPos.y = INTERNAL_AIRLOCK_A_Y;
+        
+//         Serial.print("[RAMP EXIT] Synced internal map to: (X:");
+//         Serial.print(robotInfo.currentPos.x); Serial.print(", Y:");
+//         Serial.print(robotInfo.currentPos.y); //serial.println(")");
 
         snapYawToGrid(); 
         newPathNeeded = true;
@@ -524,12 +776,12 @@ void loop() {
           // turn on LED
           setRescueLedOverride(true);
           digitalWrite(RGB_GREEN_PIN, LOW); 
-          Serial.print("[RESCUE] Contact made! Illuminating GREEN LED and holding for ");
-          Serial.print(RESCUE_LED_HOLD_MS / 1000);
-          Serial.println("s...");
+//           Serial.print("[RESCUE] Contact made! Illuminating GREEN LED and holding for ");
+//           Serial.print(RESCUE_LED_HOLD_MS / 1000);
+          //serial.println("s...");
         } 
         else if (rescueStatus == -1) {
-          Serial.println("ABORT: Rescue timeout triggered.");
+          //serial.println("ABORT: Rescue timeout triggered.");
           currentState = STATE_EMERGENCY_STOP; 
         }
       } 
@@ -546,9 +798,9 @@ void loop() {
           digitalWrite(RGB_RED_PIN, HIGH);
           //digitalWrite(RGB_BLUE_PIN, HIGH);
           
-          Serial.print("[RESCUE] ");
-          Serial.print(RESCUE_LED_HOLD_MS / 1000);
-          Serial.println("-second hold complete. Initiating return sequence.");
+//           Serial.print("[RESCUE] ");
+//           Serial.print(RESCUE_LED_HOLD_MS / 1000);
+          //serial.println("-second hold complete. Initiating return sequence.");
           
           robotInfo.finalDestination = {START_X, START_Y}; 
           newPathNeeded = true;
@@ -570,22 +822,147 @@ void loop() {
 
     case STATE_ALIGN_AIRLOCK_B:  //finish rotating towards airlock
       if (updateTurnAngle()) {
-        Serial.println("Safely parked in the airlock!");
+        //serial.println("Safely parked in the airlock!");
         currentState = STATE_AIRLOCK_B; 
       }
       break;
 
-    case STATE_AIRLOCK_B:
-      stopMotors(); 
-      break;
+    case STATE_AIRLOCK_B: {
+      static int exitStep = 0;
+      static unsigned long exitTimerMs = 0;
 
-    case STATE_DEBUG:
-      DebugSensors();
-      break;
+      switch (exitStep) {
+        
+        // Scan the Airlock RFID Tag 
+        case 0: {
+          stopMotors();
+          //serial.println("[EXIT] Waiting at Airlock B gate. Scanning RFID tag...");
+          
+          refreshAllSensors();
+          uint32_t airlockTag = sensors.rfidInfo;
 
-    default:
+          if (airlockTag == 0) {
+            //serial.println("[EXIT] Error: No RFID tag detected at the gate yet. Retrying scan...");
+            delay(100); 
+            break;
+          }
+
+//           Serial.print("[EXIT] Airlock Tag Detected: "); //serial.println(airlockTag, HEX);
+          //serial.println("[EXIT] Requesting server to open Airlock B...");
+          
+          requestOpenAirlock('B', airlockTag);
+          exitTimerMs = millis();
+          exitStep = 1; 
+          break;
+        }
+
+        // Wait for Server Approval 
+        case 1: {
+          if (airlockRequestAccepted()) {
+            //serial.println("[EXIT] SERVER APPROVED! Gate opening. Preparing to move...");
+            exitTimerMs = millis();
+            exitStep = 2; 
+          } 
+          else if (airlockRequestRejected()) {
+            //serial.println("[EXIT] Server REJECTED airlock request! Retrying in 2 seconds...");
+            exitTimerMs = millis();
+            exitStep = 4; 
+          }
+          else if (millis() - exitTimerMs > 5000) {
+            //serial.println("[EXIT] Airlock API timeout. Resetting handshake...");
+            exitStep = 0;
+          }
+          break;
+        }
+
+        // Clear the Gate Threshold Using PI Closed-Loop Control 
+        case 2: {
+          // Because walls are far away, this automatically drives straight 
+          // forward at your exact target encoder speed with no steering jitter
+          updateRampWallFollowing(true); 
+          
+          if (millis() - exitTimerMs > 1500) {
+            //serial.println("[EXIT] Cleared the airlock zone. Actively scanning for home base line...");
+            exitTimerMs = millis();
+            exitStep = 3; 
+          }
+          break;
+        }
+
+        // Wall-Follow Down the Ramp & Scan for the Line 
+        case 3: {
+          // Walls close back up as you descend the ramp, enabling smooth tracking
+          updateRampWallFollowing(true); 
+
+          // Scan your IR array to check if you've crossed the flat ground marker line
+          bool lineDetected = false;
+          for (int i = 0; i < IR_COUNT; i++) {
+            if (sensors.irLineArray[i] > 2000) { 
+              lineDetected = true;
+              break;
+            }
+          }
+
+          if (lineDetected) {
+            //serial.println("[EXIT] Line detected at base of ramp! Switching to home line tracking...");
+            exitTimerMs = millis();
+            exitStep = 5; 
+          }
+          break;
+        }
+
+        // Rejection Cooldown 
+        case 4: {
+          stopMotors();
+          if (millis() - exitTimerMs > 2000) {
+            exitStep = 0; 
+          }
+          break;
+        }
+
+        // Follow the Line Into the Base 
+        case 5: {
+          // Run your standard base line alignment routine here
+          
+          if (millis() - exitTimerMs > 2000) {
+            //serial.println("=========================================");
+            //serial.println("   MISSION ACCOMPLISHED: SAFELY AT BASE  ");
+            //serial.println("=========================================");
+            stopMotors();
+            exitStep = 6; 
+          }
+          break;
+        }
+
+        // --- STEP 6: Final Shutdown ---
+        case 6:
+          stopMotors();
+          break;
+      }
+      break;
+    }
+    case STATE_DEBUG: {
+      // 1. Keep motors powered down so you can spin the wheels safely by hand
       stopMotors();
-      break;
-  }
 
+      // 2. Throttled print timer to protect the Mbed OS WiFi thread
+      static unsigned long lastEncoderPrintMs = 0;
+      if (millis() - lastEncoderPrintMs >= 200) { // Updates 5 times a second
+        lastEncoderPrintMs = millis();
+
+        //serial.println("\n===== ENCODER LIVE TRACKING =====");
+        
+//         Serial.print("Left Encoder Position  (Pin D38): ");
+        //serial.println(leftEncoderPos);
+        
+//         Serial.print("Right Encoder Position (Pin D39): ");
+        //serial.println(rightEncoderPos);
+        
+        //serial.println("=================================");
+        //serial.println("[Tip] Spin wheels forward -> counts should INCREASE.");
+        //serial.println("[Tip] Spin wheels backward -> counts should DECREASE.");
+      }
+      break;
+    }
+  }
 }

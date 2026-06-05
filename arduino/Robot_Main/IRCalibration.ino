@@ -8,7 +8,10 @@
 // navigation code then maps raw IR readings into a common 0-1000 scale.
 
 unsigned long calibrationStartMs = 0;
-const unsigned long CALIBRATION_TIME_MS = 12000;
+unsigned long calibrationLastPrintMs = 0;
+const unsigned long CALIBRATION_TIME_MS = 10000;
+const unsigned long CALIBRATION_DIRECTION_INTERVAL_MS = 2500;
+const int CALIBRATION_MOVE_SPEED = 180;
 bool calibrationComplete = false;
 
 uint16_t calibratedValues[IR_COUNT];
@@ -19,8 +22,8 @@ uint16_t sensorMin[IR_COUNT] = {0};
 uint16_t sensorMax[IR_COUNT] = {1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000};
 
 void startIRCalibration() {
-  Serial.println("--- Starting IR Calibration ---");
-  Serial.println("Sweep the sensor array over the white floor and black line!");
+  // Serial.println("--- Starting IR Calibration ---");
+  // Serial.println("Robot will move forward/back automatically over the line.");
 
   // Reset bounds before each calibration run so old lighting/surface values do
   // not affect the next trial.
@@ -30,12 +33,27 @@ void startIRCalibration() {
   }
 
   calibrationStartMs = millis();
+  calibrationLastPrintMs = 0;
   calibrationComplete = false;
 }
 
 void updateIRCalibration() {
+  if (calibrationComplete) {
+    stopMotors();
+    return;
+  }
+
   // Non-blocking calibration update: the main loop continues running, and this
   // function gradually records the lowest/highest raw value seen by each sensor.
+  unsigned long elapsedMs = millis() - calibrationStartMs;
+  bool movingForward = ((elapsedMs / CALIBRATION_DIRECTION_INTERVAL_MS) % 2) == 0;
+
+  if (movingForward) {
+    driveMotors(FORWARD_SIGN * CALIBRATION_MOVE_SPEED, FORWARD_SIGN * CALIBRATION_MOVE_SPEED);
+  } else {
+    driveMotors(-FORWARD_SIGN * CALIBRATION_MOVE_SPEED, -FORWARD_SIGN * CALIBRATION_MOVE_SPEED);
+  }
+
   for (uint8_t i = 0; i < IR_COUNT; i++) {
     if (sensors.irLineArray[i] < sensorMin[i]) {
       sensorMin[i] = sensors.irLineArray[i];
@@ -46,20 +64,21 @@ void updateIRCalibration() {
   }
 
   // Print progress once per second so the operator knows calibration is active.
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 1000) {
-    lastPrint = millis();
-    int secondsLeft = (CALIBRATION_TIME_MS - (millis() - calibrationStartMs)) / 1000;
-    Serial.print("Calibrating... ");
-    Serial.print(secondsLeft);
-    Serial.println("s remaining");
+  if (millis() - calibrationLastPrintMs >= 1000) {
+    calibrationLastPrintMs = millis();
+    unsigned long remainingMs = (elapsedMs < CALIBRATION_TIME_MS) ? (CALIBRATION_TIME_MS - elapsedMs) : 0;
+    int secondsLeft = remainingMs / 1000;
+//     Serial.print("Calibrating... ");
+//     Serial.print(secondsLeft);
+    // Serial.println("s remaining");
   }
 
   // After the sweep window, the collected min/max values become the calibration
   // data used by line following.
-  if (millis() - calibrationStartMs >= CALIBRATION_TIME_MS) {
+  if (elapsedMs >= CALIBRATION_TIME_MS) {
+    stopMotors();
     calibrationComplete = true;
-    Serial.println("--- IR Calibration Complete! ---");
+    // Serial.println("--- IR Calibration Complete! ---");
   }
 }
 

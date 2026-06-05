@@ -53,7 +53,7 @@ bool calibrateGyroBiasZ(unsigned long calibrationMs) {
   // Testing/calibration evidence: the robot samples stationary gyro Z readings
   // and stores the average bias. Later yaw integration subtracts this value so
   // small sensor offset does not immediately become heading drift.
-  Serial.println("Calibrating IMU gyro bias...");
+  // Serial.println("Calibrating IMU gyro bias...");
   gyroBiasZ = 0.0;
 
   int samples = 0;
@@ -63,41 +63,47 @@ bool calibrateGyroBiasZ(unsigned long calibrationMs) {
       myICM.getAGMT();
       gyroBiasZ += myICM.gyrZ();
       samples++;
+      
     }
     delay(1);
   }
   
   if (samples == 0) {
     gyroBiasZ = 0.0;
-    Serial.println("IMU gyro bias calibration failed: no samples.");
+    // Serial.println("IMU gyro bias calibration failed: no samples.");
     return false;
   }
 
   gyroBiasZ /= (float)samples;
   
-  Serial.print("IMU gyro bias Z: ");
-  Serial.print(gyroBiasZ, 4);
-  Serial.print(" dps from ");
-  Serial.print(samples);
-  Serial.println(" samples");
+//   Serial.print("IMU gyro bias Z: ");
+//   Serial.print(gyroBiasZ, 4);
+//   Serial.print(" dps from ");
+//   Serial.print(samples);
+  // Serial.println(" samples");
 
   lastTimeMicros = micros();
   return true;
 }
 
 void refreshAllSensors() {
-  // Main sensor refresh point called at the top of loop(). Keeping this central
-  // makes it easy to explain that every behaviour reads from the same shared
-  // sensors struct rather than polling hardware in many separate places.
   readAllTOF();
-  readIR(); // IR stays active (uses native microcontroller pins)
+  readIR(); 
+
+  if (rfidOnline) {
+    CheckRFID(); 
+    
+    if (sensors.rfidInfo != 0 &&
+        currentState != STATE_TASK2_BASE_EXIT &&
+        currentState != STATE_RAMP) {
+      verifyAndCorrectPosition(sensors.rfidInfo);
+    }
+  }
   
-  if (rfidOnline)  CheckRFID();
   if (imuOnline) {
     readIMU(); 
     sensors.compassNorth = getHeadingDegrees();
   }   
-  
 }
 
 void readIMU() {
@@ -294,9 +300,9 @@ void snapYawToGrid() { //for correcting gyro drift
   
 
   
-  Serial.print("--- GYRO DRIFT CORRECTED --- ");
-  Serial.print("Old Yaw: "); Serial.print(sensors.yaw);
-  Serial.print(" | Snapped Yaw: "); Serial.println(snappedYaw);
+//   Serial.print("--- GYRO DRIFT CORRECTED --- ");
+//   Serial.print("Old Yaw: "); Serial.print(sensors.yaw);
+//   Serial.print(" | Snapped Yaw: "); // Serial.println(snappedYaw);
   
   sensors.yaw = snappedYaw;
 }
@@ -314,38 +320,38 @@ void DebugSensors() {
       // ==========================================
       // IR ARRAY MODE (Prints all pins)
       // ==========================================
-      Serial.print("IR ARRAY [0-8]: ");
+//       Serial.print("IR ARRAY [0-8]: ");
       for (int i = 0; i < IR_COUNT; i++) {
         // Formats it neatly: val, val, val
-        Serial.print(sensors.irLineArray[i]);
-        if (i < IR_COUNT - 1) Serial.print(", "); 
+//         Serial.print(sensors.irLineArray[i]);
+//         if (i < IR_COUNT - 1) Serial.print(", "); 
       }
-      Serial.println(); // Drop to next line
+      // Serial.println(); // Drop to next line
     } 
     else {
 
-      Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
-      Serial.print(" | COMPASS NORTH: "); Serial.print(sensors.compassNorth, 1);
-      Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
-      Serial.print(", L="); Serial.print(sensors.tof_left);
-      Serial.print(", R1="); Serial.print(sensors.tof_right1);
-      Serial.print(", R2="); Serial.print(sensors.tof_right2);
-      Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
-      Serial.print(" | "); 
+//       Serial.print("YAW: "); Serial.print(sensors.yaw, 1);
+//       Serial.print(" | COMPASS NORTH: "); Serial.print(sensors.compassNorth, 1);
+//       Serial.print(" | TOF: F="); Serial.print(sensors.tof_front);
+//       Serial.print(", L="); Serial.print(sensors.tof_left);
+//       Serial.print(", R1="); Serial.print(sensors.tof_right1);
+//       Serial.print(", R2="); Serial.print(sensors.tof_right2);
+//       Serial.print(" | IR Center (S5): "); Serial.print(sensors.irLineArray[4]);
+//       Serial.print(" | "); 
 
       static uint32_t lastPrintedID = 0;
 
       if (sensors.rfidInfo != 0) {
         if (sensors.rfidInfo != lastPrintedID) {
-          Serial.print("Card detected: 0x");
-          Serial.println(sensors.rfidInfo, HEX);
+//           Serial.print("Card detected: 0x");
+          // Serial.println(sensors.rfidInfo, HEX);
           lastPrintedID = sensors.rfidInfo;
         } else {
-          Serial.println("Card detected: same card");
+          // Serial.println("Card detected: same card");
         }
       } 
       else {
-        Serial.println("no card detected");
+        // Serial.println("no card detected");
         lastPrintedID = 0; 
       }
     }

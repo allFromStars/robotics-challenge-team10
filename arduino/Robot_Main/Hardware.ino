@@ -2,7 +2,7 @@
 
 
 void initWire() {
-  Serial.println("Initialising wire...");
+  // Serial.println("Initialising wire...");
   Wire.begin();
   Wire.setClock(400000);
   Wire1.begin();
@@ -57,14 +57,11 @@ static float lastTurnError = 0;
 static unsigned long settleStartTime = 0;
 static unsigned long lastPidMicros = 0; 
 static unsigned long lastTurnDebugPrintMs = 0;
-static unsigned long lastTurnProgressCheckMs = 0;
-static float lastTurnProgressYaw = 0.0;
-static bool turnStuckBoost = false;
 
 void startTurnAngle(float targetAngle) {
-  Serial.print("Initiating Pivot Turn to: "); 
-  Serial.print(targetAngle); 
-  Serial.println("°");
+//   Serial.print("Initiating Pivot Turn to: "); 
+//   Serial.print(targetAngle); 
+  // Serial.println("°");
   
 
   targetYaw = sensors.yaw + targetAngle; 
@@ -74,66 +71,59 @@ void startTurnAngle(float targetAngle) {
   settleStartTime = 0;
   lastPidMicros = micros();
   lastTurnDebugPrintMs = 0;
-  lastTurnProgressCheckMs = millis();
-  lastTurnProgressYaw = sensors.yaw;
-  turnStuckBoost = false;
   isTurning = true;
+}
+
+void cancelTurnAngle() {
+  stopMotors();
+  isTurning = false;
+  targetYaw = sensors.yaw;
+  turnIntegral = 0;
+  lastTurnError = 0;
+  settleStartTime = 0;
+  lastPidMicros = micros();
 }
 
 bool updateTurnAngle() {
   if (!isTurning) return true; 
 
   unsigned long currentMicros = micros();
-  
-
-  if (currentMicros - lastPidMicros < 1000) return false; 
   float dt = (currentMicros - lastPidMicros) / 1000000.0;
   lastPidMicros = currentMicros;
 
+  if (dt <= 0.0) {
+    dt = 0.001;
+  }
 
   float error = targetYaw - sensors.yaw;
-  
 
-  float P_out = error * turnKp;
-
-  if (abs(error) < TURN_INTEGRAL_ACTIVE_ERROR_DEG) {
-    turnIntegral += error * dt;
-    if (turnIntegral > 100)  turnIntegral = 100;
-    if (turnIntegral < -100) turnIntegral = -100;
+  if (abs(error) <= TURN_ANGLE_TOLERANCE_DEG) {
+    if (settleStartTime == 0) {
+      settleStartTime = millis();
+    }
+    if (millis() - settleStartTime >= TURN_SETTLE_MS) {
+      stopMotors();
+      isTurning = false;
+      // Serial.println("Turn Complete.");
+      return true; 
+    }
   } else {
-    turnIntegral = 0;
+    settleStartTime = 0; 
   }
-  float I_out = turnIntegral * turnKi;
 
-  float D_out = ((error - lastTurnError) / dt) * turnKd;
+  turnIntegral += error * dt;
+  turnIntegral = constrain(turnIntegral, -TURN_INTEGRAL_LIMIT, TURN_INTEGRAL_LIMIT);
+
+  float derivative = (error - lastTurnError) / dt;
   lastTurnError = error;
 
-  float totalOutput = P_out + I_out + D_out;
+  float totalOutput = turnKp * error + turnKi * turnIntegral + turnKd * derivative;
 
-
-  if (abs(totalOutput) < MOTOR_MIN_LIMIT && abs(error) > 0.8) {
-    totalOutput = (totalOutput > 0) ? MOTOR_MIN_LIMIT : -MOTOR_MIN_LIMIT;
+  if (abs(totalOutput) < TURN_MOTOR_MIN_LIMIT && abs(error) > TURN_ANGLE_TOLERANCE_DEG) {
+    totalOutput = (totalOutput > 0.0) ? TURN_MOTOR_MIN_LIMIT : -TURN_MOTOR_MIN_LIMIT;
   }
 
-
-  if (totalOutput > MOTOR_MAX_LIMIT)  totalOutput = MOTOR_MAX_LIMIT;
-  if (totalOutput < -MOTOR_MAX_LIMIT) totalOutput = -MOTOR_MAX_LIMIT;
-
-  if (abs(error) < TURN_SLOWDOWN_ERROR_DEG) {
-    if (totalOutput > MOTOR_TURN_FINISH_LIMIT)  totalOutput = MOTOR_TURN_FINISH_LIMIT;
-    if (totalOutput < -MOTOR_TURN_FINISH_LIMIT) totalOutput = -MOTOR_TURN_FINISH_LIMIT;
-  }
-
-  if (millis() - lastTurnProgressCheckMs >= TURN_STUCK_CHECK_INTERVAL_MS) {
-    float progress = abs(sensors.yaw - lastTurnProgressYaw);
-    turnStuckBoost = abs(error) > 1.0 && progress < TURN_STUCK_MIN_PROGRESS_DEG;
-    lastTurnProgressYaw = sensors.yaw;
-    lastTurnProgressCheckMs = millis();
-  }
-
-  if (turnStuckBoost && abs(error) < TURN_SLOWDOWN_ERROR_DEG) {
-    totalOutput = (error > 0) ? MOTOR_TURN_STUCK_LIMIT : -MOTOR_TURN_STUCK_LIMIT;
-  }
+  totalOutput = constrain(totalOutput, -TURN_MOTOR_MAX_LIMIT, TURN_MOTOR_MAX_LIMIT);
 
   int leftSpeed  = FORWARD_SIGN * totalOutput; 
   int rightSpeed = -FORWARD_SIGN * totalOutput;
@@ -142,39 +132,22 @@ bool updateTurnAngle() {
 
   if (millis() - lastTurnDebugPrintMs >= TURN_DEBUG_PRINT_INTERVAL_MS) {
     lastTurnDebugPrintMs = millis();
-    Serial.print("[TURN] targetYaw=");
-    Serial.print(targetYaw, 1);
-    Serial.print(" yaw=");
-    Serial.print(sensors.yaw, 1);
-    Serial.print(" error=");
-    Serial.print(error, 1);
-    Serial.print(" gyroBiasZ=");
-    Serial.print(gyroBiasZ, 4);
-    Serial.print(" output=");
-    Serial.print(totalOutput, 1);
-    Serial.print(" stuckBoost=");
-    Serial.print(turnStuckBoost ? "Y" : "N");
-    Serial.print(" L=");
-    Serial.print(leftSpeed);
-    Serial.print(" R=");
-    Serial.println(rightSpeed);
+//     Serial.print("[TURN] targetYaw=");
+//     Serial.print(targetYaw, 1);
+//     Serial.print(" yaw=");
+//     Serial.print(sensors.yaw, 1);
+//     Serial.print(" error=");
+//     Serial.print(error, 1);
+//     Serial.print(" gyroBiasZ=");
+//     Serial.print(gyroBiasZ, 4);
+//     Serial.print(" output=");
+//     Serial.print(totalOutput, 1);
+//     Serial.print(" L=");
+//     Serial.print(leftSpeed);
+//     Serial.print(" R=");
+    // Serial.println(rightSpeed);
   }
 
-  // check Complete
-  if (abs(error) <= 1.0) {
-    if (settleStartTime == 0) {
-      settleStartTime = millis();
-    }
-    if (millis() - settleStartTime >= 80) {
-      stopMotors();
-      isTurning = false;
-      Serial.println("Turn Complete.");
-      return true; 
-    }
-  } else {
-    settleStartTime = 0; 
-  }
-  
   return false; 
 }
 
@@ -192,7 +165,7 @@ static int plantAngle = 30;
 
 // call once to start
 void startPlanting() {
-  Serial.println("Starting planting sequence...");
+  // Serial.println("Starting planting sequence...");
   planterServo.attach(SERVO_PIN);
   planterServo.write(0);
   currentAngle = 0;
@@ -243,7 +216,7 @@ bool updatePlanting() {
         if (currentAngle <= 0) {
           planterServo.detach();
           currentPlanterState = P_IDLE; // Reset for next time
-          Serial.println("Planting complete! Arm returned.");
+          // Serial.println("Planting complete! Arm returned.");
           return true; 
         }
       }

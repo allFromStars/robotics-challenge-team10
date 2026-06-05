@@ -22,7 +22,7 @@ const int MaxMotorSpeed = 600;
 // WiFi / MQTT safety configuration
 // ============================================================
 
-const char BOARD_ID[] = "Igor10";
+const char BOARD_ID[] = "treadzeppelin";
 const unsigned long WIFI_REGISTER_INTERVAL_MS = 10000;
 const unsigned long WIFI_HEARTBEAT_TIMEOUT_MS = 1000;
 
@@ -30,7 +30,7 @@ const unsigned long WIFI_HEARTBEAT_TIMEOUT_MS = 1000;
 // false = fully disable WiFi/MQTT. MiniMessenger is not started, no network
 // connection is attempted, and no "Waiting for WiFi/MQTT" messages are printed.
 // true = enable MiniMessenger connection handling.
-const bool ENABLE_NETWORK = false;
+const bool ENABLE_NETWORK = true;
 
 // MODE SWITCH: WiFi safety gate
 // false = local movement testing; the robot can move with only the mechanical
@@ -44,7 +44,13 @@ const bool REQUIRE_WIFI_SAFETY = false;
 // successful replies, so navigation/planting tests are not blocked by network.
 // true = competition/server mode; API calls are sent through MiniMessenger and
 // must wait for real server replies.
-const bool REQUIRE_SERVER_API = false;
+const bool REQUIRE_SERVER_API = true;
+const bool WAIT_FOR_TASK2_AIRLOCK_REPLY = false;
+
+// TEMP TEST SWITCH:
+// false = mechanical start runs the full base -> ramp -> arena mission.
+// true = mechanical start skips Task 2 base exit and starts at ramp wall-following.
+const bool SKIP_TASK2_BASE_TO_RAMP = true;
 
 // Mechanical kill-switch button uses INPUT_PULLUP, so LOW means pressed.
 const int SWITCH_ENABLED_STATE = LOW;
@@ -54,18 +60,15 @@ const unsigned long SWITCH_DEBOUNCE_MS = 50;
 // --- TURN PID TUNING ---
 // ============================================================
 const float turnKp = 19.5;
-const float turnKi = 6.5;
-const float turnKd = 1.8;
+const float turnKi = 1.8;
+const float turnKd = 6.5;
 
-const int MOTOR_MAX_LIMIT = 300;  
-const int MOTOR_MIN_LIMIT = 200;
-const int MOTOR_TURN_FINISH_LIMIT = 220;
-const int MOTOR_TURN_STUCK_LIMIT = 220;
-const float TURN_INTEGRAL_ACTIVE_ERROR_DEG = 20.0;
-const float TURN_SLOWDOWN_ERROR_DEG = 12.0;
+const int TURN_MOTOR_MAX_LIMIT = 300;
+const int TURN_MOTOR_MIN_LIMIT = 200;
+const float TURN_INTEGRAL_LIMIT = 1000.0;
+const float TURN_ANGLE_TOLERANCE_DEG = 1.0;
+const unsigned long TURN_SETTLE_MS = 80;
 const unsigned long TURN_DEBUG_PRINT_INTERVAL_MS = 100;
-const unsigned long TURN_STUCK_CHECK_INTERVAL_MS = 600;
-const float TURN_STUCK_MIN_PROGRESS_DEG = 1.0;
 
 
 // ============================================================
@@ -165,6 +168,7 @@ const int DEFAULT_DESTINATION_Y = 5;
 // ============================================================
 
 const unsigned long DEBUG_PRINT_INTERVAL_MS = 250;
+const unsigned long STARTUP_CALIBRATION_DELAY_MS = 5000;
 
 // ============================================================
 // Wall Following & Ramp Configuration
@@ -172,6 +176,9 @@ const unsigned long DEBUG_PRINT_INTERVAL_MS = 250;
 const int TARGET_WALL_DIST_MM = 80;     
 const int FRONT_COLLISION_DIST_MM = 100; // Hard stop distance
 const int TAILGATE_START_DIST_MM = 300;  // Begin slowing down at this distance
+const int RAMP_DOOR_DETECT_DIST_MM = 180;
+const int RAMP_DOOR_CLEAR_DIST_MM = 350;
+const unsigned long RAMP_DOOR_CLEAR_STABLE_MS = 700;
 
 const float wallKp = 1.9;
 const float wallKd = 2.5;

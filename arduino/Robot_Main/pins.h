@@ -19,11 +19,21 @@ const int RIGHT_MOTOR_CHANNEL = 2;
 // Encoder pins
 // ============================================================
 
+/*
 const int LEFT_ENCODER_PIN_A = D2;
 const int LEFT_ENCODER_PIN_B = D3;
 
 const int RIGHT_ENCODER_PIN_A = D4;
 const int RIGHT_ENCODER_PIN_B = D5;
+*/
+
+//NEW TO SAVE ARDUINO FROM INTERRUPT AND WIFI PROBLEMS
+const int LEFT_ENCODER_PIN_A  = D38; // PI_14 (EXTI Line 14) - Safe Active Interrupt!
+const int LEFT_ENCODER_PIN_B  = D36; // Standard Digital Read
+
+const int RIGHT_ENCODER_PIN_A = D39; // PE_6  (EXTI Line 6)  - Safe Active Interrupt!
+const int RIGHT_ENCODER_PIN_B = D37; // Standard Digital Read
+
 
 // ============================================================
 // IR reflectance sensor array
