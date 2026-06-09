@@ -99,7 +99,7 @@ flowchart TD
 
 ## Core Software Architecture
 
-The platform utilizes a customized **Event-Driven Non-Blocking State Machine** running within a high-frequency polling loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for safety overrides simultaneously while computing real-time control adjustments.
+The platform utilises a non blocking state machine running within a high-frequency loop. Unlike rigid sequence-driven systems, this architecture allows the robot to continuously refresh its sensor array and listen for any signals from the server simultaneously while computing real-time control adjustments.
 
 
 ### Core State Machine
